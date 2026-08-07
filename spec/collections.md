@@ -14,7 +14,7 @@ is exactly the suite's existing resource model (dialect → defineResource
 as a product**, multi-tenant. The port's job is to force the missing
 field/policy branches into existence, not to reinvent Payload.
 
-## 0. Execution mode
+## 0. Execution mode — IMPLEMENTED
 
 Hosted collections run the suite's **JIT execution mode**
 (cms/execution-modes.md): the declared document becomes a live resource
@@ -29,8 +29,9 @@ are defined there — hosting is never lock-in.
 `hono-aep-baas-config/collections/<slug>.cms.json` declares a resource
 in the DIALECT's document form (the same shape the suite's meta-API
 already round-trips); sync applies it like any other document
-(sync.md), and the account serves it at
-`/v1/projects/{p}/collections/{slug}/rows/…` — standard AEP methods,
+(sync.md), and the account serves the declared resource at its OWN
+plural — `/v1/projects/{p}/{plural}/…` (true AEP paths; reserved
+plurals refused) — standard AEP methods,
 generated admin, generated MCP tools, generated OpenAPI. The dashboard
 and MCP can author collections too (three surfaces, one write surface).
 

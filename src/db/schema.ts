@@ -11,11 +11,15 @@ export { operation } from "hono-aep-jobs";
 import { jobsTables } from "hono-aep-jobs";
 export { target, subscriber, message } from "hono-aep-notifications";
 import { notificationTables } from "hono-aep-notifications";
+// JIT collection rows (cms/execution-modes.md §3) ride it too.
+export { jsonRows } from "hono-aep-drizzle";
+import { jsonRowsTables } from "hono-aep-drizzle";
 
 export const tables = {
   ...generatedTables,
   ...jobsTables,
   ...notificationTables,
+  ...jsonRowsTables,
   ...apiKeyTables,
   ...authTables,
 };

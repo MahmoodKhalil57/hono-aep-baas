@@ -1,13 +1,14 @@
 import "../db"; // opens SQLite and installs the seam
 import { eq } from "drizzle-orm";
-import { aepApp, attachMcp, composeSinks, openApiDocument } from "hono-aep";
+import { aepApp, attachMcp, openApiDocument } from "hono-aep";
 import { createApiKey, keyPrincipal } from "hono-aep-auth";
 import { createHealthProbes } from "hono-aep-observability";
 import { db } from "../db/registry";
 import { forms, tables } from "../db/schema";
 import { drizzleAepStorage } from "hono-aep-drizzle";
-import { form, project, submission } from "./resources";
-import { authn, jobs, notifications } from "./services";
+import { collection, form, project, submission } from "./resources";
+import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
+import { authn, eventSink, jobs, notifications, principalFrom } from "./services";
 
 /**
  * mizan-gpp — forms-as-a-service (baas/spec/). The whole server: the AEP
@@ -21,22 +22,15 @@ const aep = aepApp({
     project,
     form,
     submission,
+    collection,
     ...(jobs ? [jobs.resource({ policy: "authenticated" })] : []),
     ...(notifications ? [notifications.feedResource()] : []),
   ],
-  storage: drizzleAepStorage({ db, tables, resources: [project, form, submission] }),
+  storage: drizzleAepStorage({ db, tables, resources: [project, form, submission, collection] }),
   serviceName: "baas.hono-aep.dev",
   basePath: "/v1",
-  ...(authn
-    ? {
-        authorization: {
-          principal: async (c: import("hono").Context) =>
-            (await authn!.principal(c.req.raw.headers)) ??
-            (await keyPrincipal(db, c.req.header("Authorization"))),
-        },
-      }
-    : {}),
-  ...(jobs ? { onEvent: composeSinks(jobs.eventConsumer()) } : {}),
+  ...(authn ? { authorization: { principal: principalFrom } } : {}),
+  ...(eventSink ? { onEvent: eventSink } : {}),
 });
 attachMcp(aep, { name: "mizan-gpp" });
 jobs?.start(1000);
@@ -153,8 +147,25 @@ const server = Bun.serve({
       }) as Promise<Record<string, unknown>>;
       return Response.json(await documentPromise);
     },
-    "/v1/*": (request: Request) => {
+    "/v1/*": async (request: Request) => {
       const url = new URL(request.url);
+      // JIT dispatch (baas/collections.md): /v1/projects/{p}/{plural}/…
+      // where {plural} is not a compiled child → the project's declared
+      // collections app (live the moment its document is applied).
+      const segments = url.pathname.split("/"); // ["", "v1", "projects", p, seg, …]
+      if (
+        segments[2] === "projects" &&
+        segments[3] &&
+        !segments[3].includes(":") &&
+        segments[4] &&
+        !COMPILED_CHILD_PLURALS.has(segments[4].split(":")[0]!)
+      ) {
+        const jit = await jitProjectApp(segments[3]);
+        if (jit) {
+          const stripped = `/${segments.slice(4).join("/")}`;
+          return jit.app.fetch(new Request(`${url.origin}${stripped}${url.search}`, request));
+        }
+      }
       return aep.app.fetch(
         new Request(`${url.origin}${url.pathname.replace(/^\/v1/, "") || "/"}${url.search}`, request),
       );

@@ -7,6 +7,8 @@ import {
   type Notifications,
 } from "hono-aep-notifications";
 import { registerConnectionsKind } from "hono-aep-connections";
+import { composeSinks, type EventSink } from "hono-aep";
+import { keyPrincipal, type Principal } from "hono-aep-auth";
 import { db } from "../db/registry";
 import { createJobHandlers } from "./jobs";
 
@@ -49,3 +51,15 @@ export const notifications: Notifications | null = (() => {
   Object.assign(handlers, created.jobHandlers());
   return created;
 })();
+
+/** Session-or-key principal — one resolver for the compiled AND JIT apps. */
+export async function principalFrom(c: import("hono").Context): Promise<Principal | null> {
+  if (!authn) return null;
+  return (
+    (await authn.principal(c.req.raw.headers)) ??
+    (await keyPrincipal(db, c.req.header("Authorization")))
+  );
+}
+
+/** The resource-event sink shared by every app instance (jobs consumes). */
+export const eventSink: EventSink | null = jobs ? composeSinks(jobs.eventConsumer()) : null;

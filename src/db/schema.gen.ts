@@ -34,9 +34,19 @@ export const submissions = sqliteTable("submissions", {
   update_time: text("update_time").notNull(),
 });
 
+export const collections = sqliteTable("collections", {
+  id: text("id").primaryKey(),
+  project_id: text("project_id").notNull().references(() => projects.id),
+  definition: text("definition", { mode: "json" }).notNull(),
+  created_by: text("created_by"),
+  create_time: text("create_time").notNull(),
+  update_time: text("update_time").notNull(),
+});
+
 /** Tables keyed by resource singular — pass to drizzleAepStorage(). */
 export const tables = {
   "project": projects,
   "form": forms,
   "submission": submissions,
+  "collection": collections,
 } as const;
