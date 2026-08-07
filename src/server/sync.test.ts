@@ -125,3 +125,32 @@ describe("sync (baas/sync.md)", () => {
     expect(text.startsWith('{\n  "display_name"')).toBe(true); // sorted keys
   });
 });
+
+describe("sync: .cms.css documents (themes)", () => {
+  it("pushes raw css, server canonicalizes, pull reifies the canonical form", async () => {
+    const context = { dir, key };
+    // Manifest gains the themes glob.
+    const manifest = JSON.parse(readFileSync(join(dir, "baas.json"), "utf8")) as {
+      resources: string[];
+    };
+    manifest.resources.push("themes/*.cms.css");
+    writeFileSync(join(dir, "baas.json"), canonical(manifest));
+    mkdirSync(join(dir, "themes"), { recursive: true });
+    writeFileSync(
+      join(dir, "themes", "default.cms.css"),
+      ":root{--primary:oklch(0.6 0.1 200)}\n.dark{--primary:oklch(0.8 0.1 200)}",
+    );
+
+    const pushed = await push(context);
+    expect(pushed.applied).toBeGreaterThanOrEqual(1);
+
+    await pull(context);
+    const reified = readFileSync(join(dir, "themes", "default.cms.css"), "utf8");
+    expect(reified).toContain("/* cms-theme: default"); // canonical came back
+    expect(reified.startsWith("{")).toBe(false); // raw css, not a JSON envelope
+
+    // Canonical local file ⇒ push is a no-op (round-trip across the wire).
+    const again = await push(context);
+    expect(again.applied).toBe(0);
+  }, 30_000);
+});

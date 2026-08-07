@@ -5,6 +5,7 @@ import { projectCms } from "../src/cms/project.cms";
 import { formCms } from "../src/cms/form.cms";
 import { submissionCms } from "../src/cms/submission.cms";
 import { collectionCms } from "../src/cms/collection.cms";
+import { themeCms } from "../src/cms/theme.cms";
 
 /**
  * Regenerates src/db/schema.gen.ts from the DIALECT (not the composed
@@ -15,7 +16,8 @@ const project = defineResource({ ...composable(projectCms) });
 const form = defineResource({ ...composable(formCms), parent: project });
 const submission = defineResource({ ...composable(submissionCms), parent: form });
 const collection = defineResource({ ...composable(collectionCms), parent: project });
+const theme = defineResource({ ...composable(themeCms), parent: project });
 
-const schema = generateSqliteSchema({ resources: [project, form, submission, collection] });
+const schema = generateSqliteSchema({ resources: [project, form, submission, collection, theme] });
 await Bun.write(new URL("../src/db/schema.gen.ts", import.meta.url), schema);
 console.log("Wrote src/db/schema.gen.ts from the dialect.");

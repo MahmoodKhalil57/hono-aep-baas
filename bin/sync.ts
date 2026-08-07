@@ -44,33 +44,48 @@ export type SyncContext = {
   log?: (line: string) => void;
 };
 
-type FileEntry = { file: string; plural: string; slug: string; body: Json };
+type FileEntry = { file: string; plural: string; slug: string; body: Json; format: "json" | "css" };
 
 const loadManifest = (dir: string): Manifest =>
   JSON.parse(readFileSync(join(dir, "baas.json"), "utf8")) as Manifest;
 
+/** `.cms.json` documents are JSON; `.cms.css` documents are raw css in a
+ *  `{css}` envelope (themes — baas/site.md §1). */
 const loadFiles = (dir: string, manifest: Manifest): FileEntry[] => {
   const entries: FileEntry[] = [];
   for (const pattern of manifest.resources) {
     const [plural, filePattern] = pattern.split("/") as [string, string];
-    if (!filePattern?.endsWith(".cms.json")) throw new Error(`unsupported glob '${pattern}'`);
+    const format = filePattern?.endsWith(".cms.css")
+      ? ("css" as const)
+      : filePattern?.endsWith(".cms.json")
+        ? ("json" as const)
+        : null;
+    if (!format) throw new Error(`unsupported glob '${pattern}'`);
+    const suffix = format === "css" ? ".cms.css" : ".cms.json";
     let names: string[] = [];
     try {
-      names = readdirSync(join(dir, plural)).filter((name) => name.endsWith(".cms.json"));
+      names = readdirSync(join(dir, plural)).filter((name) => name.endsWith(suffix));
     } catch {
       continue; // the directory may not exist yet
     }
     for (const name of names.sort()) {
+      const raw = readFileSync(join(dir, plural, name), "utf8");
       entries.push({
         file: `${plural}/${name}`,
         plural,
-        slug: name.slice(0, -".cms.json".length),
-        body: JSON.parse(readFileSync(join(dir, plural, name), "utf8")) as Json,
+        slug: name.slice(0, -suffix.length),
+        body: format === "css" ? { css: raw } : (JSON.parse(raw) as Json),
+        format,
       });
     }
   }
   return entries;
 };
+
+const formatOf = (manifest: Manifest, plural: string): "json" | "css" =>
+  manifest.resources.some((pattern) => pattern.startsWith(`${plural}/`) && pattern.endsWith(".cms.css"))
+    ? "css"
+    : "json";
 
 const api = (context: SyncContext, manifest: Manifest) => {
   const doFetch = context.fetchImpl ?? fetch;
@@ -159,6 +174,7 @@ export async function push(
   const call = api(context, manifest);
   const log = context.log ?? (() => {});
   const plan = await diff(context);
+  const bodies = new Map(loadFiles(context.dir, manifest).map((entry) => [entry.file, entry.body]));
   let applied = 0;
   let pruned = 0;
   let noops = 0;
@@ -209,7 +225,7 @@ export async function push(
               return { display_name: manifest.project };
             }
           })()
-        : (JSON.parse(readFileSync(join(context.dir, entry.file!), "utf8")) as Json);
+        : bodies.get(entry.file!)!; // css files are {css} envelopes, never JSON.parse'd
     log(`${entry.action.toUpperCase()} ${entry.path}`);
     await applyOne(entry.path, body);
     applied += 1;
@@ -240,7 +256,15 @@ export async function pull(context: SyncContext): Promise<{ written: string[] }>
     if (!listed.ok) continue;
     const body = (await listed.json()) as { results: (Json & { path: string })[] };
     for (const row of body.results) {
-      write(`${plural}/${row.path.split("/").pop()}.cms.json`, row);
+      const slug = row.path.split("/").pop();
+      if (formatOf(manifest, plural) === "css") {
+        const target = join(context.dir, `${plural}/${slug}.cms.css`);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, String(row["css"] ?? ""));
+        written.push(`${plural}/${slug}.cms.css`);
+      } else {
+        write(`${plural}/${slug}.cms.json`, row);
+      }
     }
   }
   return { written };
@@ -264,7 +288,10 @@ export function fmt(context: SyncContext): { formatted: string[] } {
     }
   };
   reprint("project.cms.json");
-  for (const entry of loadFiles(context.dir, manifest)) reprint(entry.file);
+  for (const entry of loadFiles(context.dir, manifest)) {
+    if (entry.format === "css") continue; // the server canonicalizes; pull reifies
+    reprint(entry.file);
+  }
   return { formatted };
 }
 

@@ -41,6 +41,16 @@ frontends (site.md §2a — GitHub Pages) via BEARER tokens (better-auth's
 bearer transport), because the API's wildcard CORS deliberately excludes
 credentials — cookies are the dashboard's transport, never the SPA's.
 
+### 1b. Open design question (decided before implementation, recorded now)
+
+Better-auth's email uniqueness is PER TABLE: one shared pool-user table
+means one email cannot exist in two projects' pools — wrong for a
+multi-tenant baas. The implementation must choose between per-project
+table sets (runtime DDL — against the JIT spirit), scoped identities
+(compound email keys — leaks into delivered mail), or a better-auth
+tenancy seam. This is why pools are a dedicated round, not a bolt-on;
+the choice lands HERE before code does.
+
 ## 2. What this is not
 
 Not orgs/teams (saastarter has a single pool, no tenants — the §3a

@@ -305,3 +305,45 @@ describe("P1 field branches in hosted mode", () => {
     expect(badRef.status).toBe(400);
   }, 30_000);
 });
+
+describe("hosted themes (site.md §1)", () => {
+  it("canonicalizes on write and serves doubled-selector css with CORS", async () => {
+    const cookie = await signUp("themer");
+    const project = await makeProject(cookie, "Themed");
+    const projectId = project.split("/")[1]!;
+
+    // Non-canonical input (odd spacing) — the round-trip law formats it.
+    const applied = await fetch(url(`/v1/${project}/themes/default`), {
+      method: "PUT",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({
+        css: ":root{--primary:oklch(0.55 0.15 45);--radius:0.5rem}\n.dark{--primary:oklch(0.7 0.15 45)}",
+      }),
+    });
+    expect(applied.status).toBe(201);
+    const stored = (await (
+      await fetch(url(`/v1/${project}/themes/default`), { headers: { Cookie: cookie } })
+    ).json()) as { css: string };
+    expect(stored.css).toContain("/* cms-theme: default");
+    expect(stored.css).toContain("  --primary: oklch(0.55 0.15 45);");
+
+    const served = await fetch(url(`/v1/projects/${projectId}/theme.css`), {
+      headers: { Origin: "https://someone.github.io" },
+    });
+    expect(served.status).toBe(200);
+    expect(served.headers.get("Content-Type")).toContain("text/css");
+    expect(served.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    const css = await served.text();
+    expect(css).toContain(":root:root"); // doubled — beats the SPA's bundled defaults
+    expect(css).toContain(":root:root.dark");
+    expect(css).toContain("--primary: oklch(0.55 0.15 45);");
+
+    // Garbage is refused with a clear problem.
+    const garbage = await fetch(url(`/v1/${project}/themes/broken`), {
+      method: "PUT",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ css: "body { color: red }" }),
+    });
+    expect(garbage.status).toBe(400);
+  }, 30_000);
+});

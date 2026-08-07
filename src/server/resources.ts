@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { AepProblem, defineResource, type Json } from "hono-aep";
-import { composable, resourceFromDocument } from "hono-aep-cms";
+import { composable, parseThemeCss, printThemeCss, resourceFromDocument } from "hono-aep-cms";
 import { createApiKey } from "hono-aep-auth";
 import { db } from "../db/registry";
 import { collections, forms, projects } from "../db/schema";
@@ -8,6 +8,7 @@ import { projectCms } from "../cms/project.cms";
 import { formCms } from "../cms/form.cms";
 import { submissionCms } from "../cms/submission.cms";
 import { collectionCms } from "../cms/collection.cms";
+import { themeCms } from "../cms/theme.cms";
 import { invalidateProject } from "./jit-collections";
 
 /**
@@ -136,6 +137,7 @@ const RESERVED_PLURALS = new Set([
   "forms",
   "submissions",
   "collections",
+  "themes",
   "keys",
   "operations",
   "notifications",
@@ -220,5 +222,61 @@ export const collection = defineResource({
     afterUpdate: ({ parent }) => invalidateProject(parent.split("/")[1]!),
     afterApply: ({ parent }) => invalidateProject(parent.split("/")[1]!),
     afterDelete: ({ parent }) => invalidateProject(parent.split("/")[1]!),
+  },
+});
+
+/** Canonicalize a theme document; reject css that carries no tokens. */
+function canonicalThemeCss(slug: string, css: string): string {
+  const parsed = parseThemeCss(slug, css);
+  if (Object.keys(parsed.light).length === 0 && Object.keys(parsed.dark).length === 0) {
+    throw new AepProblem({
+      type: "INVALID_ARGUMENT",
+      status: 400,
+      title: "Not a theme document.",
+      detail: "Expected `:root { --token: value; … }` (and optionally `.dark { … }`).",
+    });
+  }
+  return printThemeCss(parsed);
+}
+
+/** `projects/{p}/themes/{slug}` — hosted tweakcn documents (baas/site.md §1). */
+export const theme = defineResource({
+  ...composable(themeCms),
+  parent: project,
+  hooks: {
+    beforeCreate: async ({ data, parent, id, honoContext }) => {
+      const principal = principalOf(honoContext)!;
+      const rows = await db.select().from(projects).where(eq(projects.id, parent.split("/")[1]!)).limit(1);
+      if (!rows[0] || rows[0].created_by !== principal.userId) {
+        throw forbidden(`${parent} is not owned by the caller.`);
+      }
+      return {
+        ...data,
+        css: canonicalThemeCss(id ?? "theme", String(data["css"] ?? "")),
+        created_by: principal.userId,
+      };
+    },
+    beforeApply: async ({ data, previous, parent, id, honoContext }) => {
+      const principal = principalOf(honoContext)!;
+      if (previous) {
+        if (previous["created_by"] !== principal.userId) {
+          throw forbidden("The theme belongs to another account.");
+        }
+      } else {
+        const rows = await db.select().from(projects).where(eq(projects.id, parent.split("/")[1]!)).limit(1);
+        if (!rows[0] || rows[0].created_by !== principal.userId) {
+          throw forbidden(`${parent} is not owned by the caller.`);
+        }
+      }
+      return {
+        ...data,
+        css: canonicalThemeCss(id ?? "theme", String(data["css"] ?? "")),
+        created_by: (previous?.["created_by"] as string) ?? principal.userId,
+      };
+    },
+    beforeUpdate: ({ data, id }) =>
+      data["css"] !== undefined
+        ? { ...data, css: canonicalThemeCss(id ?? "theme", String(data["css"])) }
+        : data,
   },
 });

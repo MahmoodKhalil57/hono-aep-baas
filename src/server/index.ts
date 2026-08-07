@@ -3,10 +3,11 @@ import { eq } from "drizzle-orm";
 import { aepApp, attachMcp, openApiDocument } from "hono-aep";
 import { createApiKey, keyPrincipal } from "hono-aep-auth";
 import { createHealthProbes } from "hono-aep-observability";
+import { parseThemeCss, renderThemeCss } from "hono-aep-cms";
 import { db } from "../db/registry";
-import { forms, tables } from "../db/schema";
+import { forms, tables, themes } from "../db/schema";
 import { drizzleAepStorage } from "hono-aep-drizzle";
-import { collection, form, project, submission } from "./resources";
+import { collection, form, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
 import { authn, eventSink, jobs, notifications, principalFrom } from "./services";
 
@@ -23,10 +24,11 @@ const aep = aepApp({
     form,
     submission,
     collection,
+    theme,
     ...(jobs ? [jobs.resource({ policy: "authenticated" })] : []),
     ...(notifications ? [notifications.feedResource()] : []),
   ],
-  storage: drizzleAepStorage({ db, tables, resources: [project, form, submission, collection] }),
+  storage: drizzleAepStorage({ db, tables, resources: [project, form, submission, collection, theme] }),
   serviceName: "baas.hono-aep.dev",
   basePath: "/v1",
   ...(authn ? { authorization: { principal: principalFrom } } : {}),
@@ -185,6 +187,18 @@ const server = Bun.serve({
       // where {plural} is not a compiled child → the project's declared
       // collections app (live the moment its document is applied).
       const segments = url.pathname.split("/"); // ["", "v1", "projects", p, seg, …]
+      // Hosted theme serving (baas/site.md §1): one <link> tag restyles the
+      // consumer's whole SPA — doubled selectors beat its bundled defaults.
+      if (segments[2] === "projects" && segments[3] && segments[4] === "theme.css" && !segments[5]) {
+        const rows = await db.select().from(themes).where(eq(themes.project_id, segments[3])).limit(1);
+        if (!rows[0]) return corsify(Response.json({ title: "No theme declared." }, { status: 404 }));
+        const parsed = parseThemeCss(String(rows[0].id), rows[0].css);
+        return corsify(
+          new Response(renderThemeCss(parsed), {
+            headers: { "Content-Type": "text/css;charset=utf-8", "Cache-Control": "no-cache" },
+          }),
+        );
+      }
       if (
         segments[2] === "projects" &&
         segments[3] &&
