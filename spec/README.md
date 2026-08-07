@@ -42,6 +42,14 @@ the CMS; where saasignal exposes KV/locks/sketches, mizan-gpp exposes
 only primitives with a static-HTML story (forms, counters). Shared
 conventions where the surfaces meet: agents.md §4.
 
+### 1b. Three configuration surfaces, one write surface
+
+Builders configure their account through the website, through MCP, or by
+syncing a git repo (`hono-aep-baas-config/` in their own project —
+baas/sync.md). All three are clients of the same API (sync.md §1's law),
+so capability parity across them is automatic, and a pure-HTML project
+(config dir + static frontend) is fully reproducible from `git clone`.
+
 ## 2. Resource model
 
 AIP-122/124 hierarchy; tenancy is the resource tree, not org machinery:
@@ -85,6 +93,7 @@ a `TODO(baas)` marker at their definition site in the suite specs
 | Captcha/challenge | forms.md §2 (new binding) | 2 |
 | Counters (`:increment`, SVG badge) | counters.md | 2 |
 | Per-project MCP endpoint | aep/mcp bridge (implemented) + keys (agents.md §3) | 2 |
+| Git config sync (`sync diff/push/pull`) | baas/sync.md — Apply-driven, sk_ auth | 2 |
 | Rate limits + quotas | baas/quotas.md (promotion candidate) | 2 |
 | CSV export | AEP-153 | 2 |
 | Attachments | media (mostly implemented) | 2 |
@@ -118,6 +127,6 @@ in that project's spec, never in the marker.
 
 ## 6. References
 
-- baas/forms.md, baas/keys.md, baas/quotas.md, baas/agents.md, baas/counters.md
+- baas/forms.md, baas/keys.md, baas/quotas.md, baas/agents.md, baas/counters.md, baas/sync.md
 - Suite umbrella (`customPackages/spec/README.md`) §2 laws, §3a register
 - AIP-122/124/133; AEP-151/153/155; aep/events; web3forms (survey)
