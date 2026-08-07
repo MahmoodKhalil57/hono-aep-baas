@@ -94,6 +94,10 @@ a `TODO(baas)` marker at their definition site in the suite specs
 | Counters (`:increment`, SVG badge) | counters.md | 2 |
 | Per-project MCP endpoint | aep/mcp bridge (implemented) + keys (agents.md §3) | 2 |
 | Git config sync (`sync diff/push/pull`) | baas/sync.md — Apply-driven, sk_ auth | 2 |
+| Hosted themes (tweakcn documents → one `<link>` tag) | baas/site.md §1 | 2 |
+| Hosted Puck pages ("a cms for some pages", optional) | baas/site.md §1 + collections | 3 |
+| Static-SPA SEO/AEO (artifacts reified at build; prerender) | baas/site.md §2 | 3 |
+| Admin panel in the consumer SPA (contract-driven, white-label) | baas/site.md §3 + auth pools | 3 |
 | Rate limits + quotas | baas/quotas.md (promotion candidate) | 2 |
 | CSV export | AEP-153 | 2 |
 | Attachments | media (mostly implemented) | 2 |
@@ -130,7 +134,8 @@ in that project's spec, never in the marker.
 ## 6. References
 
 - baas/forms.md, baas/keys.md, baas/quotas.md, baas/agents.md,
-  baas/counters.md, baas/sync.md, baas/collections.md, baas/auth-pools.md
+  baas/counters.md, baas/sync.md, baas/collections.md, baas/auth-pools.md,
+  baas/site.md
 - Flagship consumer: the saastarter port (packages/saastarter surveyed;
   richPetShop2 remains the minimal example)
 - Suite umbrella (`customPackages/spec/README.md`) §2 laws, §3a register

@@ -54,6 +54,9 @@ hono-aep-baas-config/
 }
 ```
 
+TODO(saastarter): the `.cms.css` document type (themes — baas/site.md
+§1) joins the manifest globs; same slug-id and canonical-form rules.
+
 Rules (the service-instance registry's invariants, inherited):
 
 1. **Single definition site** — one resource per file, no merging, no
