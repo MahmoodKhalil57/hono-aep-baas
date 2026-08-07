@@ -5,9 +5,9 @@
 
 ## Abstract
 
-The suite's CMS layers — tweakcn themes, Puck pages, the SEO/AEO
-surface, the generated admin — are all DOCUMENTS plus contract-driven
-React components. Neither half needs inventing for hosted mode: the
+The suite's CMS layers — tweakcn themes, Puck pages AND standalone
+Puck blocks, the PWA + SEO/AEO surface, the generated admin — are all
+DOCUMENTS plus contract-driven React components. Neither half needs inventing for hosted mode: the
 baas hosts the documents per project (JIT, three surfaces, synced), and
 the consumer's STATIC react-router SPA renders them with the existing
 packages (hono-aep-blocks CmsPage, hono-aep-ui admin, the base
@@ -22,6 +22,7 @@ The suite's exact document types, project-scoped:
 |---|---|---|
 | `themes/<name>.cms.css` | tweakcn visual editor in the dashboard studio; git sync; MCP | `<link rel="stylesheet" href="{endpoint}/projects/{p}/theme.css">` — one tag restyles the whole SPA through the base component contract |
 | `pages/<slug>.cms.json` (Puck) | the Puck builder in the dashboard; sync; MCP | `CmsPage` (hono-aep-blocks) renders the JSON client-side — hosted CMS pages INSIDE a static site, blocks bound to the project's collections |
+| `blocks/<slug>.cms.json` (Puck fragments) | the same Puck builder, fragment-scoped | a SECTION, not a page — hero, pricing, footer, announcement — fetched by slug and rendered AS-IS (`<CmsBlock name="hero">`, hono-aep-blocks over hono-aep-ui) inside the consumer's OWN code routes. A cms for some sections, not just some pages |
 | `site.cms.json` | dashboard form; sync; MCP | name/locale/urls/OG defaults — the head/SEO context |
 
 Round-trip law applies unchanged; sync (sync.md) gains the `.cms.css`
@@ -31,19 +32,27 @@ Puck pages (the "if the user wants a cms for some pages" tier — pages
 are optional; a consumer can ship pure code routes and use none of
 this).
 
-## 2. SEO/AEO for a static SPA
+## 2. PWA + SEO/AEO for a static SPA
 
-A static SPA can't server-render its head — the suite's answer splits
-in two, both from the declared content:
+A static SPA can't server-render its head or serve dynamic app
+artifacts — the suite's answer splits in two, both from the declared
+content:
 
 1. **Build-time reification**: `sync pull` (or the SPA's build step)
-   writes the discovery artifacts INTO the static site's public/ —
-   sitemap.xml, robots.txt (+ Content Signals), llms.txt / llms-full,
-   per-page `.md` mirrors, JSON-LD fragments, OG defaults — generated
-   from site.cms.json + pages + collections exactly as the suite does
-   today, but as pull outputs instead of runtime routes. Rebuild on
-   content change (CI: `sync diff --exit-code` already fails the build
-   when content moved).
+   writes the artifacts INTO the static site's public/ —
+   - discovery: sitemap.xml, robots.txt (+ Content Signals),
+     llms.txt / llms-full, per-page `.md` mirrors, JSON-LD fragments,
+     OG defaults;
+   - **PWA**: manifest (from `site.app` + the theme's tokens — the
+     suite's generator, with the Pages base path feeding `start_url`
+     and scope), icons, and the service worker (offline shell +
+     precache; the suite's no-clients.claim + deferred-registration
+     discipline applies) — an INSTALLABLE app off a static host;
+   generated from site.cms.json + pages + collections exactly as the
+   suite does today, but as pull outputs instead of runtime routes.
+   Rebuild on content change (CI: `sync diff --exit-code` already
+   fails the build when content moved), and the check:pwa audit runs
+   against the built output in the same CI.
 2. **Prerender**: react-router SPA mode prerenders the page routes it
    learns from the project's pages list — crawlable HTML for hosted
    pages with zero server. The consumer opts in per route.

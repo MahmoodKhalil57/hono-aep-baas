@@ -95,8 +95,8 @@ a `TODO(baas)` marker at their definition site in the suite specs
 | Per-project MCP endpoint | aep/mcp bridge (implemented) + keys (agents.md §3) | 2 |
 | Git config sync (`sync diff/push/pull`) | baas/sync.md — Apply-driven, sk_ auth | 2 |
 | Hosted themes (tweakcn documents → one `<link>` tag) | baas/site.md §1 | 2 |
-| Hosted Puck pages ("a cms for some pages", optional) | baas/site.md §1 + collections | 3 |
-| Static-SPA SEO/AEO (artifacts reified at build; prerender) | baas/site.md §2 | 3 |
+| Hosted Puck pages + BLOCK fragments ("a cms for some pages — or just some sections") | baas/site.md §1 + collections | 3 |
+| Static-SPA PWA + SEO/AEO (artifacts reified at build; prerender; installable off Pages) | baas/site.md §2 | 3 |
 | Admin panel in the consumer SPA (contract-driven, white-label) | baas/site.md §3 + auth pools | 3 |
 | Rate limits + quotas | baas/quotas.md (promotion candidate) | 2 |
 | CSV export | AEP-153 | 2 |
