@@ -65,4 +65,4 @@ export async function jitProjectApp(
 }
 
 /** Compiled child plurals the dispatcher must never intercept. */
-export const COMPILED_CHILD_PLURALS = new Set(["forms", "collections", "themes"]);
+export const COMPILED_CHILD_PLURALS = new Set(["forms", "collections", "themes", "pages", "blocks"]);

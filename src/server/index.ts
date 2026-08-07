@@ -7,7 +7,7 @@ import { parseThemeCss, renderThemeCss } from "hono-aep-cms";
 import { db } from "../db/registry";
 import { forms, tables, themes } from "../db/schema";
 import { drizzleAepStorage } from "hono-aep-drizzle";
-import { collection, form, project, submission, theme } from "./resources";
+import { block, collection, form, page, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
 import { authn, eventSink, jobs, notifications, principalFrom } from "./services";
 
@@ -25,10 +25,12 @@ const aep = aepApp({
     submission,
     collection,
     theme,
+    page,
+    block,
     ...(jobs ? [jobs.resource({ policy: "authenticated" })] : []),
     ...(notifications ? [notifications.feedResource()] : []),
   ],
-  storage: drizzleAepStorage({ db, tables, resources: [project, form, submission, collection, theme] }),
+  storage: drizzleAepStorage({ db, tables, resources: [project, form, submission, collection, theme, page, block] }),
   serviceName: "baas.hono-aep.dev",
   basePath: "/v1",
   ...(authn ? { authorization: { principal: principalFrom } } : {}),

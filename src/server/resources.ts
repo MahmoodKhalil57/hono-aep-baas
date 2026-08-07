@@ -9,6 +9,8 @@ import { formCms } from "../cms/form.cms";
 import { submissionCms } from "../cms/submission.cms";
 import { collectionCms } from "../cms/collection.cms";
 import { themeCms } from "../cms/theme.cms";
+import { pageCms } from "../cms/page.cms";
+import { blockCms } from "../cms/block.cms";
 import { invalidateProject } from "./jit-collections";
 
 /**
@@ -138,6 +140,8 @@ const RESERVED_PLURALS = new Set([
   "submissions",
   "collections",
   "themes",
+  "pages",
+  "blocks",
   "keys",
   "operations",
   "notifications",
@@ -279,4 +283,62 @@ export const theme = defineResource({
         ? { ...data, css: canonicalThemeCss(id ?? "theme", String(data["css"])) }
         : data,
   },
+});
+
+/** Puck document guard: {content: [...]} — the shape both renderers need. */
+function assertPuckDocument(data: unknown, fragment: boolean): void {
+  const doc = data as { content?: unknown } | null;
+  if (!doc || typeof doc !== "object" || !Array.isArray(doc.content)) {
+    throw new AepProblem({
+      type: "INVALID_ARGUMENT",
+      status: 400,
+      title: fragment ? "Not a Puck fragment." : "Not a Puck document.",
+      detail: "Expected `data.content` to be an array of blocks.",
+    });
+  }
+}
+
+const siteDocHooks = (fragment: boolean) => ({
+  beforeCreate: async ({ data, parent, honoContext }: { data: Record<string, unknown>; parent: string; honoContext: import("hono").Context }) => {
+    const principal = principalOf(honoContext)!;
+    const rows = await db.select().from(projects).where(eq(projects.id, parent.split("/")[1]!)).limit(1);
+    if (!rows[0] || rows[0].created_by !== principal.userId) {
+      throw forbidden(`${parent} is not owned by the caller.`);
+    }
+    assertPuckDocument(data["data"], fragment);
+    return { ...data, created_by: principal.userId };
+  },
+  beforeApply: async ({ data, previous, parent, honoContext }: { data: Record<string, unknown>; previous?: Record<string, unknown>; parent: string; honoContext: import("hono").Context }) => {
+    const principal = principalOf(honoContext)!;
+    if (previous) {
+      if (previous["created_by"] !== principal.userId) {
+        throw forbidden("The document belongs to another account.");
+      }
+    } else {
+      const rows = await db.select().from(projects).where(eq(projects.id, parent.split("/")[1]!)).limit(1);
+      if (!rows[0] || rows[0].created_by !== principal.userId) {
+        throw forbidden(`${parent} is not owned by the caller.`);
+      }
+    }
+    assertPuckDocument(data["data"], fragment);
+    return { ...data, created_by: (previous?.["created_by"] as string) ?? principal.userId };
+  },
+  beforeUpdate: ({ data }: { data: Record<string, unknown> }) => {
+    if (data["data"] !== undefined) assertPuckDocument(data["data"], fragment);
+    return data;
+  },
+});
+
+/** `projects/{p}/pages/{slug}` — hosted Puck pages (baas/site.md §1). */
+export const page = defineResource({
+  ...composable(pageCms),
+  parent: project,
+  hooks: siteDocHooks(false),
+});
+
+/** `projects/{p}/blocks/{slug}` — hosted Puck fragments (site.md §1). */
+export const block = defineResource({
+  ...composable(blockCms),
+  parent: project,
+  hooks: siteDocHooks(true),
 });

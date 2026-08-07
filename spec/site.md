@@ -21,8 +21,8 @@ The suite's exact document types, project-scoped:
 | document | edited by | consumed as |
 |---|---|---|
 | `themes/<name>.cms.css` | tweakcn visual editor in the dashboard studio; git sync; MCP | `<link rel="stylesheet" href="{endpoint}/projects/{p}/theme.css">` — one tag restyles the whole SPA through the base component contract |
-| `pages/<slug>.cms.json` (Puck) | the Puck builder in the dashboard; sync; MCP | `CmsPage` (hono-aep-blocks) renders the JSON client-side — hosted CMS pages INSIDE a static site, blocks bound to the project's collections |
-| `blocks/<slug>.cms.json` (Puck fragments) | the same Puck builder, fragment-scoped | a SECTION, not a page — hero, pricing, footer, announcement — fetched by slug and rendered AS-IS (`<CmsBlock name="hero">`, hono-aep-blocks over hono-aep-ui) inside the consumer's OWN code routes. A cms for some sections, not just some pages |
+| `pages/<slug>.cms.json` (Puck) — SERVING IMPLEMENTED | the Puck builder in the dashboard; sync; MCP | `CmsPage` (hono-aep-blocks) renders the JSON client-side — public read, owner write, Puck-shape guarded; the flagship's catch-all route mounts it |
+| `blocks/<slug>.cms.json` (Puck fragments) — SERVING + `CmsBlock` IMPLEMENTED | the same Puck builder, fragment-scoped | a SECTION, not a page — fetched by URL and rendered AS-IS (`<CmsBlock url=…>`, shipped in hono-aep-blocks) inside the consumer's OWN code routes |
 | `site.cms.json` | dashboard form; sync; MCP | name/locale/urls/OG defaults — the head/SEO context |
 
 Round-trip law applies unchanged; sync (sync.md) gains the `.cms.css`

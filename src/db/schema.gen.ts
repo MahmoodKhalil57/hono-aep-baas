@@ -52,6 +52,27 @@ export const themes = sqliteTable("themes", {
   update_time: text("update_time").notNull(),
 });
 
+export const pages = sqliteTable("pages", {
+  id: text("id").primaryKey(),
+  project_id: text("project_id").notNull().references(() => projects.id),
+  title: text("title").notNull(),
+  data: text("data", { mode: "json" }).notNull(),
+  seo: text("seo", { mode: "json" }),
+  created_by: text("created_by"),
+  create_time: text("create_time").notNull(),
+  update_time: text("update_time").notNull(),
+});
+
+export const blocks = sqliteTable("blocks", {
+  id: text("id").primaryKey(),
+  project_id: text("project_id").notNull().references(() => projects.id),
+  title: text("title"),
+  data: text("data", { mode: "json" }).notNull(),
+  created_by: text("created_by"),
+  create_time: text("create_time").notNull(),
+  update_time: text("update_time").notNull(),
+});
+
 /** Tables keyed by resource singular — pass to drizzleAepStorage(). */
 export const tables = {
   "project": projects,
@@ -59,4 +80,6 @@ export const tables = {
   "submission": submissions,
   "collection": collections,
   "theme": themes,
+  "page": pages,
+  "block": blocks,
 } as const;

@@ -347,3 +347,67 @@ describe("hosted themes (site.md §1)", () => {
     expect(garbage.status).toBe(400);
   }, 30_000);
 });
+
+describe("hosted pages + blocks (site.md §1)", () => {
+  it("owner declares; the world reads; Puck shape is guarded", async () => {
+    const cookie = await signUp("publisher");
+    const project = await makeProject(cookie, "Site");
+
+    const pageDoc = {
+      title: "About us",
+      data: {
+        root: { props: {} },
+        content: [
+          { type: "Hero", props: { id: "h1", title: "Hello", subtitle: "From a hosted page" } },
+        ],
+      },
+    };
+    expect(
+      (
+        await fetch(url(`/v1/${project}/pages/about`), {
+          method: "PUT",
+          headers: { ...json, Cookie: cookie },
+          body: JSON.stringify(pageDoc),
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (
+        await fetch(url(`/v1/${project}/blocks/announcement`), {
+          method: "PUT",
+          headers: { ...json, Cookie: cookie },
+          body: JSON.stringify({ title: "Banner", data: { content: [{ type: "Markdown", props: { id: "m1", body: "**Sale!**" } }] } }),
+        })
+      ).status,
+    ).toBe(201);
+
+    // Public reads, no auth — the static SPA's surface (CORS asserted elsewhere).
+    const read = await fetch(url(`/v1/${project}/pages/about`));
+    expect(read.status).toBe(200);
+    expect(((await read.json()) as { title: string }).title).toBe("About us");
+    expect((await fetch(url(`/v1/${project}/blocks/announcement`))).status).toBe(200);
+    expect((await fetch(url(`/v1/${project}/pages`))).status).toBe(200);
+
+    // Writes stay the owner's.
+    expect(
+      (
+        await fetch(url(`/v1/${project}/pages/about`), {
+          method: "PATCH",
+          headers: json,
+          body: JSON.stringify({ title: "Hijacked" }),
+        })
+      ).status,
+    ).toBe(401);
+
+    // Non-Puck data is refused.
+    expect(
+      (
+        await fetch(url(`/v1/${project}/pages/broken`), {
+          method: "PUT",
+          headers: { ...json, Cookie: cookie },
+          body: JSON.stringify({ title: "X", data: { nope: true } }),
+        })
+      ).status,
+    ).toBe(400);
+  }, 30_000);
+});
