@@ -34,6 +34,16 @@ export const project = defineResource({
       ...data,
       created_by: principalOf(honoContext)!.userId, // create policy is authenticated
     }),
+    // Apply is sync's verb (baas/sync.md): same stamping, and replacing an
+    // existing project requires owning it — the hook enforces what the
+    // row-less apply policy cannot.
+    beforeApply: ({ data, previous, honoContext }) => {
+      const principal = principalOf(honoContext)!;
+      if (previous && previous["created_by"] !== principal.userId) {
+        throw forbidden("The project belongs to another account.");
+      }
+      return { ...data, created_by: (previous?.["created_by"] as string) ?? principal.userId };
+    },
   },
 });
 
@@ -44,7 +54,7 @@ export const form = defineResource({
   hooks: {
     beforeCreate: async ({ data, parent, honoContext }) => {
       const principal = principalOf(honoContext)!;
-      const projectId = Number(parent.split("/")[1]);
+      const projectId = parent.split("/")[1]!;
       const rows = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
       if (!rows[0] || rows[0].created_by !== principal.userId) {
         throw forbidden(`${parent} is not owned by the caller.`);
@@ -52,6 +62,34 @@ export const form = defineResource({
       // Publishable submit key (baas/keys.md): identifies, not a secret —
       // minted through the real key machinery, plaintext stored on the form
       // BY DESIGN (pk_ class), so the HTML embed is one copy-paste.
+      const key = await createApiKey(db, {
+        class: "publishable",
+        name: `submit: ${String(data["display_name"] ?? "form")}`,
+        userId: principal.userId,
+        scopes: ["submissions:create"],
+      });
+      return { ...data, created_by: principal.userId, submit_key: key.plaintext };
+    },
+    // Sync applies forms by slug: first apply mints the key exactly like
+    // create; re-applies PRESERVE the minted key and ownership (push twice
+    // ≡ noop — sync.md §7), and foreign parents/rows stay 403.
+    beforeApply: async ({ data, previous, parent, honoContext }) => {
+      const principal = principalOf(honoContext)!;
+      if (previous) {
+        if (previous["created_by"] !== principal.userId) {
+          throw forbidden("The form belongs to another account.");
+        }
+        return {
+          ...data,
+          created_by: previous["created_by"] as string,
+          submit_key: previous["submit_key"] as string,
+        };
+      }
+      const projectId = parent.split("/")[1]!;
+      const rows = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+      if (!rows[0] || rows[0].created_by !== principal.userId) {
+        throw forbidden(`${parent} is not owned by the caller.`);
+      }
       const key = await createApiKey(db, {
         class: "publishable",
         name: `submit: ${String(data["display_name"] ?? "form")}`,
@@ -69,7 +107,7 @@ export const submission = defineResource({
   parent: form,
   hooks: {
     beforeCreate: async ({ data, parent }) => {
-      const formId = Number(parent.split("/")[3]);
+      const formId = parent.split("/")[3]!;
       const rows = await db.select().from(forms).where(eq(forms.id, formId)).limit(1);
       if (!rows[0]) {
         throw new AepProblem({

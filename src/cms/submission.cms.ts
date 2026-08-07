@@ -21,6 +21,7 @@ export const submissionCms = cmsResource({
   }),
   owner: "created_by",
   methods: {
+    apply: false,
     // THE web3forms move: creation is public; everything else is the owner's.
     create: true,
     list: { policy: { owner: { field: "created_by" } } },

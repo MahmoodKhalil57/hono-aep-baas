@@ -24,9 +24,9 @@ export function createJobHandlers(deps: {
         ctx.log(`submission ${event.path} marked spam — stored, not announced`);
         return { announced: false, verdict: "spam" };
       }
-      const formId = Number(event.path.split("/")[3]);
+      const formId = event.path.split("/")[3]!;
       const row = (await db.select().from(forms).where(eq(forms.id, formId)).limit(1))[0];
-      if (!row) throw new Error(`submission-intake: form ${formId} not found`);
+      if (!row) throw new Error(`submission-intake: form '${formId}' not found`);
 
       const notifications = deps.notifications();
       if (!notifications) return { announced: false, reason: "notifications not configured" };

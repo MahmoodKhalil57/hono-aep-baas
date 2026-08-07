@@ -4,6 +4,7 @@ import { cmsResource } from "hono-aep-cms";
 
 export const formCms = cmsResource({
   singular: "form",
+  idPattern: /^[a-z][a-z0-9-]{0,62}$/,
   plural: "forms",
   schema: z.object({
     display_name: z.string().min(1).max(120).meta({
@@ -25,6 +26,7 @@ export const formCms = cmsResource({
   }),
   owner: "created_by",
   methods: {
+    apply: { policy: "authenticated" },
     create: { policy: "authenticated" },
     list: { policy: { owner: { field: "created_by" } } },
     get: { policy: { owner: { field: "created_by" } } },

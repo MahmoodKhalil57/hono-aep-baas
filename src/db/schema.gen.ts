@@ -4,7 +4,7 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 
 export const projects = sqliteTable("projects", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: text("id").primaryKey(),
   display_name: text("display_name").notNull(),
   created_by: text("created_by"),
   create_time: text("create_time").notNull(),
@@ -12,8 +12,8 @@ export const projects = sqliteTable("projects", {
 });
 
 export const forms = sqliteTable("forms", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  project_id: integer("project_id").notNull().references(() => projects.id),
+  id: text("id").primaryKey(),
+  project_id: text("project_id").notNull().references(() => projects.id),
   display_name: text("display_name").notNull(),
   notify_email: text("notify_email").notNull(),
   redirect_url: text("redirect_url"),
@@ -25,7 +25,7 @@ export const forms = sqliteTable("forms", {
 
 export const submissions = sqliteTable("submissions", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  form_id: integer("form_id").notNull().references(() => forms.id),
+  form_id: text("form_id").notNull().references(() => forms.id),
   data: text("data", { mode: "json" }).notNull(),
   replyto: text("replyto"),
   verdict: text("verdict", { enum: ["ham", "spam", "unverified"] }),

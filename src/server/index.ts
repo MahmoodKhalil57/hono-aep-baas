@@ -1,7 +1,7 @@
 import "../db"; // opens SQLite and installs the seam
 import { eq } from "drizzle-orm";
 import { aepApp, attachMcp, composeSinks, openApiDocument } from "hono-aep";
-import { keyPrincipal } from "hono-aep-auth";
+import { createApiKey, keyPrincipal } from "hono-aep-auth";
 import { createHealthProbes } from "hono-aep-observability";
 import { db } from "../db/registry";
 import { forms, tables } from "../db/schema";
@@ -127,6 +127,22 @@ const server = Bun.serve({
         : Promise.resolve(Response.json({ title: "authn not configured" }, { status: 503 })),
     "/submit/:key": {
       POST: (request: Request & { params: { key: string } }) => submit(request, request.params.key),
+    },
+    // The sync-key bootstrap (sync.md §5): a signed-in builder mints their
+    // sk_ secret key here; the full keys management resource is TODO(baas)
+    // (keys.md §3). Plaintext returned once — hashed at rest from here on.
+    "/v1/keys:mint": {
+      POST: async (request: Request) => {
+        const principal = authn ? await authn.principal(request.headers) : null;
+        if (!principal) return Response.json({ title: "Sign in to mint a key." }, { status: 401 });
+        const minted = await createApiKey(db, {
+          class: "secret",
+          name: "sync",
+          userId: principal.userId,
+          scopes: ["*"],
+        });
+        return Response.json({ plaintext: minted.plaintext, display: minted.display });
+      },
     },
     "/v1/openapi.json": async () => {
       documentPromise ??= openApiDocument(aep, {
