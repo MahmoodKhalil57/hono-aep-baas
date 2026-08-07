@@ -1,0 +1,32 @@
+{
+  "name": "hono-aep-baas",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "mizan-gpp — forms-as-a-service on the hono-aep suite (spec/: the product contract). Minimal LoC by design: the dialect + one submit alias + job handlers.",
+  "scripts": {
+    "dev": "bun --hot src/server/index.ts",
+    "start": "bun src/server/index.ts",
+    "db:push": "drizzle-kit push",
+    "db:schema": "bun scripts/generate-schema.ts",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "better-auth": "^1.4.18",
+    "drizzle-orm": "^0.44.0",
+    "hono": "^4.11.0",
+    "hono-aep": "file:../customPackages/hono-aep",
+    "hono-aep-auth": "file:../customPackages/hono-aep-auth",
+    "hono-aep-cms": "file:../customPackages/hono-aep-cms",
+    "hono-aep-connections": "file:../customPackages/hono-aep-connections",
+    "hono-aep-drizzle": "file:../customPackages/hono-aep-drizzle",
+    "hono-aep-jobs": "file:../customPackages/hono-aep-jobs",
+    "hono-aep-notifications": "file:../customPackages/hono-aep-notifications",
+    "zod": "^4.3.11"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "drizzle-kit": "^0.31.10",
+    "vitest": "^4.1.10"
+  }
+}

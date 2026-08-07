@@ -1,0 +1,10 @@
+{
+  "config": {
+    "email": {
+      "from": "mizan-gpp <no-reply@baas.example>"
+    }
+  },
+  "description": "Owner announcements + submitter autoresponders. Local provider logs; swap to resend + an EnvRef apiKey to really send.",
+  "kind": "notifications",
+  "provider": "local"
+}

@@ -1,0 +1,20 @@
+{
+  "config": {
+    "events": {
+      "submission-received": {
+        "job": {
+          "type": "submission-intake"
+        },
+        "pattern": "projects.*.forms.*.submissions.*.create"
+      }
+    },
+    "queues": {
+      "default": {
+        "logRetentionDays": 7
+      }
+    }
+  },
+  "description": "The delivery queue (baas/forms.md §3): submission events fan out here; every delivery is an operation.",
+  "kind": "jobs",
+  "provider": "local"
+}

@@ -1,0 +1,11 @@
+{
+  "config": {
+    "emailPassword": {
+      "enabled": true,
+      "requireVerification": false
+    }
+  },
+  "description": "Platform accounts for mizan-gpp builders (per-project end-user pools are phase 3).",
+  "kind": "authn",
+  "provider": "better-auth"
+}
