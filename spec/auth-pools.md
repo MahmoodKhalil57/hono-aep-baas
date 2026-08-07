@@ -34,6 +34,13 @@ project.
    change-email, deletion) and ride the project's notifications
    instance for transport — templates overridable per project.
 
+### 1a. Static-origin sessions
+
+TODO(saastarter): pool sessions MUST work from cross-origin static
+frontends (site.md §2a — GitHub Pages) via BEARER tokens (better-auth's
+bearer transport), because the API's wildcard CORS deliberately excludes
+credentials — cookies are the dashboard's transport, never the SPA's.
+
 ## 2. What this is not
 
 Not orgs/teams (saastarter has a single pool, no tenants — the §3a

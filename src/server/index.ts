@@ -47,6 +47,35 @@ const probes = createHealthProbes({
   ],
 });
 
+/**
+ * Cross-origin contract (site.md §2a, normative): wildcard `*`
+ * WITHOUT Allow-Credentials — public reads and Bearer flows work from any
+ * static origin (GitHub Pages is the reference host); session cookies
+ * stay same-origin by construction. ETag/If-Match exposed for sync and
+ * optimistic UI.
+ */
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Expose-Headers": "ETag, X-Request-Id",
+} as const;
+
+const preflight = (): Response =>
+  new Response(null, {
+    status: 204,
+    headers: {
+      ...CORS_HEADERS,
+      "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type, If-Match, X-Request-Id",
+      "Access-Control-Max-Age": "86400",
+    },
+  });
+
+const corsify = (response: Response): Response => {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(CORS_HEADERS)) headers.set(name, value);
+  return new Response(response.body, { status: response.status, headers });
+};
+
 const RESERVED = new Set(["_redirect", "_botcheck", "_replyto"]);
 
 /**
@@ -120,7 +149,9 @@ const server = Bun.serve({
         ? authn.handler(request)
         : Promise.resolve(Response.json({ title: "authn not configured" }, { status: 503 })),
     "/submit/:key": {
-      POST: (request: Request & { params: { key: string } }) => submit(request, request.params.key),
+      OPTIONS: () => preflight(),
+      POST: async (request: Request & { params: { key: string } }) =>
+        corsify(await submit(request, request.params.key)),
     },
     // The sync-key bootstrap (sync.md §5): a signed-in builder mints their
     // sk_ secret key here; the full keys management resource is TODO(baas)
@@ -148,6 +179,7 @@ const server = Bun.serve({
       return Response.json(await documentPromise);
     },
     "/v1/*": async (request: Request) => {
+      if (request.method === "OPTIONS") return preflight();
       const url = new URL(request.url);
       // JIT dispatch (baas/collections.md): /v1/projects/{p}/{plural}/…
       // where {plural} is not a compiled child → the project's declared
@@ -163,11 +195,15 @@ const server = Bun.serve({
         const jit = await jitProjectApp(segments[3]);
         if (jit) {
           const stripped = `/${segments.slice(4).join("/")}`;
-          return jit.app.fetch(new Request(`${url.origin}${stripped}${url.search}`, request));
+          return corsify(
+            await jit.app.fetch(new Request(`${url.origin}${stripped}${url.search}`, request)),
+          );
         }
       }
-      return aep.app.fetch(
-        new Request(`${url.origin}${url.pathname.replace(/^\/v1/, "") || "/"}${url.search}`, request),
+      return corsify(
+        await aep.app.fetch(
+          new Request(`${url.origin}${url.pathname.replace(/^\/v1/, "") || "/"}${url.search}`, request),
+        ),
       );
     },
     "/livez": (request: Request) => probes.fetch(request),

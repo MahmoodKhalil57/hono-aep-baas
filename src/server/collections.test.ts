@@ -235,3 +235,30 @@ describe("hosted collections (JIT)", () => {
     expect(brokenPolicy.status).toBe(400);
   }, 30_000);
 });
+
+describe("the static-origin contract (site.md §2a)", () => {
+  it("serves wildcard CORS without credentials on /v1 and /submit", async () => {
+    const pre = await fetch(url("/v1/projects"), {
+      method: "OPTIONS",
+      headers: { Origin: "https://someone.github.io", "Access-Control-Request-Method": "GET" },
+    });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(pre.headers.get("Access-Control-Allow-Headers")).toContain("Authorization");
+    expect(pre.headers.get("Access-Control-Allow-Headers")).toContain("If-Match");
+    expect(pre.headers.get("Access-Control-Allow-Credentials")).toBeNull(); // cookies stay same-origin
+
+    const read = await fetch(url("/v1/projects"), {
+      headers: { Origin: "https://someone.github.io" },
+    });
+    expect(read.headers.get("Access-Control-Allow-Origin")).toBe("*"); // even on the 401
+    expect(read.headers.get("Access-Control-Expose-Headers")).toContain("ETag");
+
+    const submitPre = await fetch(url("/submit/pk_live_whatever"), {
+      method: "OPTIONS",
+      headers: { Origin: "https://someone.github.io", "Access-Control-Request-Method": "POST" },
+    });
+    expect(submitPre.status).toBe(204);
+    expect(submitPre.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+});

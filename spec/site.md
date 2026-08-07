@@ -51,6 +51,36 @@ in two, both from the declared content:
 The baas API host keeps its own agent surface (agents.md §1) — this
 section is about the CONSUMER's static origin.
 
+## 2a. GitHub Pages, first-class (the reference host)
+
+The flagship frontend MUST deploy to GitHub Pages unmodified — the
+cheapest host with the strictest constraints, which is the point: what
+works on Pages works anywhere static, and its constraints ENFORCE the
+frontend-only rule (there is no server to sneak logic into).
+
+1. **Base path**: project pages serve under `/{repo}/` — the app takes
+   its basename from config (react-router `basename` + build `base`);
+   `/` and `/{repo}/` both work.
+2. **Deep links**: Pages has no rewrites — the build emits `404.html`
+   (the SPA shell) so refreshes on client routes recover, and hosted
+   page routes are PRERENDERED (§2) so crawlers never depend on the
+   fallback.
+3. **`.nojekyll`** ships in the build output (Jekyll eats underscore-
+   prefixed asset paths).
+4. **Cross-origin API contract** (the baas side, NORMATIVE): the API
+   serves wildcard `*` CORS on /v1 and /submit — WITHOUT
+   `Allow-Credentials`. Consequence, by design: public reads and
+   Bearer-key flows work from any static origin, while session COOKIES
+   stay same-origin (the dashboard). Static origins authenticate with
+   tokens, never cookies: pk_ for public writes, sk_ for tooling, and
+   the auth pool's BEARER sessions for end users —
+   TODO(saastarter) at auth-pools.md (better-auth bearer transport).
+   ETag/If-Match are exposed/allowed headers (sync and optimistic UI
+   need them).
+5. **CI shape**: `sync diff --exit-code` → `sync pull` (SEO artifacts +
+   keys) → build → `actions/deploy-pages`. The backend deploys with
+   `sync push`; the frontend is just files.
+
 ## 3. The automatic admin panel
 
 The generated admin is contract-driven React (hono-aep-ui) — it needs
