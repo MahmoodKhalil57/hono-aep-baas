@@ -32,6 +32,15 @@ explicit yields two classes with different threat models:
 4. Prefixes (`pk_`/`sk_` + environment tag) make leaked-key triage
    grep-able — a `sk_` in client code is a report-card failure.
 
+## 2a. Extensions (saastarter-demanded)
+
+TODO(saastarter): per-key rate limits and expiry windows, key metadata,
+and **subset-delegated child keys** — a key holder with the delegation
+scope mints children whose scopes are a subset of its own (parent
+linkage recorded; revoking a parent revokes its children). Pool users
+(auth-pools.md §3) get self-service key minting where the project
+enables it.
+
 ## 3. Suite branch
 
 This implements the authn spec's PLANNED apiKeys branch

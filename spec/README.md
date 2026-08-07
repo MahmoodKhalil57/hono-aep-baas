@@ -101,8 +101,10 @@ a `TODO(baas)` marker at their definition site in the suite specs
 | Per-project dashboards + deliverability card | observability kind | 3 |
 | Plan gating | flags kind | 3 |
 | Submission search | search kind (CEL filters suffice until then) | 3 |
-| Per-project end-user auth pools | authn multi-instance | 3 |
-| User-defined collections (meta-API as product) | developer meta-API multi-tenant | 3 |
+| Hosted collections (baas/collections.md — THE flagship) | developer meta-API multi-tenant + field branches | 3 |
+| End-user auth pools (baas/auth-pools.md) | authn kind per project | 3 |
+| Payments (customer link, intents, inbound webhooks) | billing kind + connections inbound | 3 |
+| Key delegation/limits/expiry (keys.md §2a) | authn apiKeys extensions | 3 |
 | Template gallery (commerce/booking/etc. as dialect bundles) | meta-API + blocks | 3 |
 | Live submission inbox (realtime) | umbrella §3a realtime, aep/events | 3 |
 
@@ -127,6 +129,9 @@ in that project's spec, never in the marker.
 
 ## 6. References
 
-- baas/forms.md, baas/keys.md, baas/quotas.md, baas/agents.md, baas/counters.md, baas/sync.md
+- baas/forms.md, baas/keys.md, baas/quotas.md, baas/agents.md,
+  baas/counters.md, baas/sync.md, baas/collections.md, baas/auth-pools.md
+- Flagship consumer: the saastarter port (packages/saastarter surveyed;
+  richPetShop2 remains the minimal example)
 - Suite umbrella (`customPackages/spec/README.md`) §2 laws, §3a register
 - AIP-122/124/133; AEP-151/153/155; aep/events; web3forms (survey)
