@@ -14,6 +14,16 @@ is exactly the suite's existing resource model (dialect → defineResource
 as a product**, multi-tenant. The port's job is to force the missing
 field/policy branches into existence, not to reinvent Payload.
 
+## 0. Execution mode
+
+Hosted collections run the suite's **JIT execution mode**
+(cms/execution-modes.md): the declared document becomes a live resource
+via `resourceFromDocument`, rows live in the generic `json_rows` storage
+(per-project scope = tenancy isolation), and the equivalence law
+guarantees the contract is identical to a compiled app's. Promotion
+(perf) and ejection (`sync pull` → `.cms.ts` in the tenant's own app)
+are defined there — hosting is never lock-in.
+
 ## 1. Declaration
 
 `hono-aep-baas-config/collections/<slug>.cms.json` declares a resource
@@ -62,12 +72,15 @@ idempotent third-party calls). Hosting user code remains a NON-GOAL
   notifications cover the hook chains (order emails, low-stock alerts,
   counter bumps) — saastarter's own hooks are fire-and-forget event
   handlers, which is exactly our events → jobs shape.
-- **The bespoke remainder lives app-side**: the react-router frontend
-  is a framework-mode app whose server loaders/actions ARE the escape
-  hatch — they call the baas with an `sk_` key, do their money math,
-  and stay in the consumer's repo. The baas hosts state, auth, delivery,
-  and contracts; the app hosts its own irreducible logic. No sandboxed
-  functions product required.
+- **The flagship frontend is STATIC** (react-router SPA mode +
+  shadcn, beginner-friendly, no server code): everything it needs MUST
+  come from the baas over HTTP — which is the forcing function keeping
+  the declarative surface honest. Where a consumer truly needs bespoke
+  server logic (money math, third-party orchestration), the escape
+  hatch is an OPTIONAL thin server in their own repo calling the baas
+  with an `sk_` key — an advanced pattern, never the default. The baas
+  hosts state, auth, delivery, and contracts; no sandboxed functions
+  product required.
 
 ## 5. Generated surfaces
 
@@ -80,6 +93,6 @@ Docs split: TODO(saastarter).
 
 ## 6. References
 
-- suite: cms dialect + meta-API, localization.md, media, AEP-164/216
+- suite: cms dialect + meta-API, cms/execution-modes.md, localization.md, media, AEP-164/216
 - baas: README §1 (non-goals), sync.md, agents.md, auth-pools.md
 - survey: saastarter (Payload collections + ecommerce plugin)
