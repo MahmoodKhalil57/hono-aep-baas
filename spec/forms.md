@@ -28,7 +28,15 @@ Requirements:
 3. **Idempotency:** AEP-155 `request_id` honored when supplied; browser
    double-posts without one are mitigated by a short content-hash
    dedupe window (declared in the form config, default 30s).
-4. **No-JS constraint:** every behavior here MUST work from a static
+4. **CORS:** the submit surface returns wildcard `*` CORS for
+   bearer-key requests (and their preflights). Safe by the Stripe
+   argument: publishable keys are not cookies — browsers never attach
+   them automatically, so there is no CSRF surface, and a key holder
+   can already call the API directly. Without this, the JS-enhanced
+   `fetch` submission path breaks cross-origin, silently favoring the
+   no-JS path. Origin ALLOWLISTS (§2.3) still apply after CORS — CORS
+   is browser courtesy, the allowlist is enforcement.
+5. **No-JS constraint:** every behavior here MUST work from a static
    `<form>` — 303 redirects, not fetch responses; challenge widgets
    (§2) are progressive enhancement with a server-verified fallback.
 

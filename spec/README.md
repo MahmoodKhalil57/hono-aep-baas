@@ -31,6 +31,17 @@ The product is **declarative backend primitives**, not hosted compute:
   - Realtime in v1 (suite umbrella §3a — deferred; MUST use aep/events
     grammar when it lands).
 
+### 1a. Positioning vs saasignal
+
+saasignal (higher-level SaaS for APIs) hosts infra primitives and
+opinionated domain orchestrations for API BUILDERS; mizan-gpp hosts
+declarative, AIP-compliant primitives for BEGINNERS and AGENTS. The
+boundary in practice: where saasignal ships a hosted commerce/booking
+module, mizan-gpp ships a dialect TEMPLATE the user owns and edits in
+the CMS; where saasignal exposes KV/locks/sketches, mizan-gpp exposes
+only primitives with a static-HTML story (forms, counters). Shared
+conventions where the surfaces meet: agents.md §4.
+
 ## 2. Resource model
 
 AIP-122/124 hierarchy; tenancy is the resource tree, not org machinery:
@@ -64,6 +75,7 @@ a `TODO(baas)` marker at their definition site in the suite specs
 | Feature | Suite branch | Phase |
 |---|---|---|
 | Hosted submission endpoint | methods/policies (implemented) | 1 |
+| Agent discovery surface + health probes | seo surface (implemented) + probes (agents.md §1–2) | 1 |
 | Owner dashboard | generated admin + owner pushdown (implemented) | 1 |
 | Async delivery + retries | jobs kind | 1 |
 | Event fan-out | aep/events EMITTER in hono-aep | 1 |
@@ -71,6 +83,8 @@ a `TODO(baas)` marker at their definition site in the suite specs
 | Outbound webhooks | connections producer | 1 |
 | Access keys | authn apiKeys (baas/keys.md) | 1 |
 | Captcha/challenge | forms.md §2 (new binding) | 2 |
+| Counters (`:increment`, SVG badge) | counters.md | 2 |
+| Per-project MCP endpoint | aep/mcp bridge (implemented) + keys (agents.md §3) | 2 |
 | Rate limits + quotas | baas/quotas.md (promotion candidate) | 2 |
 | CSV export | AEP-153 | 2 |
 | Attachments | media (mostly implemented) | 2 |
@@ -80,6 +94,8 @@ a `TODO(baas)` marker at their definition site in the suite specs
 | Submission search | search kind (CEL filters suffice until then) | 3 |
 | Per-project end-user auth pools | authn multi-instance | 3 |
 | User-defined collections (meta-API as product) | developer meta-API multi-tenant | 3 |
+| Template gallery (commerce/booking/etc. as dialect bundles) | meta-API + blocks | 3 |
+| Live submission inbox (realtime) | umbrella §3a realtime, aep/events | 3 |
 
 ## 4. The `TODO(<project>)` convention
 
@@ -102,6 +118,6 @@ in that project's spec, never in the marker.
 
 ## 6. References
 
-- baas/forms.md, baas/keys.md, baas/quotas.md
+- baas/forms.md, baas/keys.md, baas/quotas.md, baas/agents.md, baas/counters.md
 - Suite umbrella (`customPackages/spec/README.md`) §2 laws, §3a register
 - AIP-122/124/133; AEP-151/153/155; aep/events; web3forms (survey)
