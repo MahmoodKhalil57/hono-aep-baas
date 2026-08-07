@@ -42,8 +42,8 @@ What saastarter's 23 collections actually use, and where each stands:
 | field capability | suite status |
 |---|---|
 | scalars, enums, arrays/objects (JSON) | EXISTS (dialect schema) |
-| references (single + hasMany) with FK integrity | EXISTS (reference/parent) — hasMany TODO(saastarter) |
-| unique + indexed fields | partial — declarative `unique`/`index` knobs TODO(saastarter) |
+| references (single + hasMany) | EXISTS — hasMany verified through both modes (path-shape validation; FK integrity stays single-ref/parent) |
+| unique + indexed fields | EXISTS — `unique`/`indexed` field knobs; the FRAMEWORK answers 409 in both modes, compiled DDL is the backstop |
 | draft/published `_status` | EXISTS (states + transitions) |
 | soft delete | EXISTS (AEP-164) |
 | localized fields with fallback | spec-first (cms localization.md) — TODO(saastarter) |

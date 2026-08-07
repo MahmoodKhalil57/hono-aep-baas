@@ -262,3 +262,46 @@ describe("the static-origin contract (site.md §2a)", () => {
     expect(submitPre.headers.get("Access-Control-Allow-Origin")).toBe("*");
   });
 });
+
+describe("P1 field branches in hosted mode", () => {
+  it("unique fields answer 409 through the JIT path", async () => {
+    const cookie = await signUp("uniq");
+    const project = await makeProject(cookie, "Unique");
+    await fetch(url(`/v1/${project}/collections/pages`), {
+      method: "PUT",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({
+        definition: {
+          singular: "entry",
+          plural: "entries",
+          fields: [
+            { name: "slug", type: "string", required: true, unique: true },
+            { name: "title", type: "string", required: true },
+            { name: "related", type: "string", cardinality: "many", reference_collection: "entries" },
+          ],
+          policy_create: "authenticated",
+        },
+      }),
+    });
+    const first = await fetch(url(`/v1/${project}/entries`), {
+      method: "POST",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ slug: "home", title: "Home", related: [] }),
+    });
+    expect(first.status).toBe(201);
+    const dup = await fetch(url(`/v1/${project}/entries`), {
+      method: "POST",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ slug: "home", title: "Again" }),
+    });
+    expect(dup.status).toBe(409);
+    expect(((await dup.json()) as { type: string }).type).toBe("ALREADY_EXISTS");
+    // hasMany reference validates the path shape.
+    const badRef = await fetch(url(`/v1/${project}/entries`), {
+      method: "POST",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ slug: "other", title: "O", related: ["not-a-path"] }),
+    });
+    expect(badRef.status).toBe(400);
+  }, 30_000);
+});
