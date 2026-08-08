@@ -754,9 +754,27 @@ export function createHandler(): (request: Request) => Promise<Response> {
     }
     if (path === "/") return routes["/"]();
     // The hosted DEVELOPER studio (product §1b's "website" writer) —
-    // same-origin, so builder cookies just work.
+    // same-origin, so builder cookies just work. /studio is the dogfooded
+    // React console (dist/studio-assets, served by Workers Static Assets
+    // in prod and by index.ts locally — this branch only fires when the
+    // bundle is absent); /studio-lite is the zero-build vanilla fallback.
     if (path === "/studio") {
+      return new Response(null, { status: 302, headers: { Location: "/studio-lite" } });
+    }
+    if (path === "/studio-lite") {
       return new Response(studioHtml, { headers: { "Content-Type": "text/html;charset=utf-8" } });
+    }
+    // The studio package's FontPicker catalog (the one /developer-api
+    // surface it self-fetches). Static list — no fs at the edge.
+    if (path === "/developer-api/font-catalog") {
+      return Response.json({
+        fonts: [
+          "IBM Plex Sans", "IBM Plex Mono", "Fraunces", "Inter", "Geist", "Space Grotesk",
+          "Source Serif 4", "JetBrains Mono", "Lora", "Manrope", "Work Sans", "DM Sans",
+          "Libre Franklin", "Crimson Pro", "Fira Code", "Newsreader", "Outfit", "Sora",
+          "Spectral", "Zilla Slab",
+        ],
+      });
     }
     if (path === "/api/auth/*".replace("*", "") || path.startsWith("/api/auth/")) return routes["/api/auth/*"](request);
     if (path === "/v1/keys:mint") return routes["/v1/keys:mint"].POST(request);

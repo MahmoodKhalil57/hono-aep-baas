@@ -3,3 +3,4 @@ data/
 .env
 dist/
 .playwright-cli/
+dist/studio-assets/

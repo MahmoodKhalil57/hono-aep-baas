@@ -1,0 +1,150 @@
+/* The dogfooded studio's stylesheet: Tailwind v4 + the shadcn token
+   vocabulary that hono-aep-ui's vendored components assume. The palette
+   commits to the studio's dark-editorial identity (warm near-black paper,
+   vermilion accent, mono kickers) — same voice as the classic page. */
+@import "tailwindcss";
+
+/* Package sources: Tailwind v4 skips node_modules in automatic detection,
+   so every class used by hono-aep-ui / hono-aep-studio must be declared. */
+@source "./";
+@source "../node_modules/hono-aep-ui/src";
+@source "../node_modules/hono-aep-studio/src";
+
+@custom-variant dark (&:is(.dark *));
+
+:root,
+.dark {
+  --background: oklch(0.17 0.008 60);
+  --foreground: oklch(0.92 0.012 80);
+  --card: oklch(0.21 0.01 60);
+  --card-foreground: oklch(0.92 0.012 80);
+  --popover: oklch(0.21 0.01 60);
+  --popover-foreground: oklch(0.92 0.012 80);
+  --primary: oklch(0.55 0.17 32);
+  --primary-foreground: oklch(0.98 0.008 85);
+  --secondary: oklch(0.27 0.012 60);
+  --secondary-foreground: oklch(0.92 0.012 80);
+  --muted: oklch(0.25 0.01 60);
+  --muted-foreground: oklch(0.68 0.02 70);
+  --accent: oklch(0.3 0.02 55);
+  --accent-foreground: oklch(0.95 0.01 80);
+  --destructive: oklch(0.6 0.2 25);
+  --destructive-foreground: oklch(0.98 0.008 85);
+  --border: oklch(0.3 0.012 60);
+  --input: oklch(0.3 0.012 60);
+  --ring: oklch(0.62 0.17 32);
+  --radius: 0.375rem;
+
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: ui-serif, Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --tracking-tighter: -0.05em;
+  --tracking-tight: -0.025em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.025em;
+  --tracking-wider: 0.05em;
+  --tracking-widest: 0.1em;
+  --spacing: 0.25rem;
+  --shadow-2xs: 0 1px rgb(0 0 0 / 0.2);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.25);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.35), 0 4px 6px -4px rgb(0 0 0 / 0.35);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.4);
+  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.5);
+  --chart-1: oklch(0.62 0.17 32);
+  --chart-2: oklch(0.6 0.12 235);
+  --chart-3: oklch(0.7 0.13 85);
+  --chart-4: oklch(0.6 0.12 150);
+  --chart-5: oklch(0.6 0.14 300);
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+  --tracking-tighter: var(--tracking-tighter);
+  --tracking-tight: var(--tracking-tight);
+  --tracking-normal: var(--tracking-normal);
+  --tracking-wide: var(--tracking-wide);
+  --tracking-wider: var(--tracking-wider);
+  --tracking-widest: var(--tracking-widest);
+  --spacing: var(--spacing);
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    letter-spacing: var(--tracking-normal);
+  }
+}
+
+/* The studio voice: mono kickers with the comment-slash prefix. */
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.kicker::before {
+  content: "// ";
+  opacity: 0.6;
+}

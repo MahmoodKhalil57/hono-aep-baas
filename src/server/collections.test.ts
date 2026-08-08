@@ -61,9 +61,19 @@ const BLOG_DEFINITION = {
   // list/get stay public — a blog IS public content.
 };
 
-describe("hosted developer studio (/studio)", () => {
-  it("serves the same-origin console", async () => {
+describe("hosted developer studio", () => {
+  it("/studio serves the dogfooded bundle (or falls back to /studio-lite)", async () => {
+    // With dist/studio-assets built, index.ts serves the React console;
+    // without it the handler 302s to the vanilla page. Either way the
+    // final document is a same-origin console.
     const response = await fetch(url("/studio"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("text/html");
+    expect(await response.text()).toContain("mizan-gpp studio");
+  });
+
+  it("/studio-lite serves the zero-build console", async () => {
+    const response = await fetch(url("/studio-lite"));
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toContain("text/html");
     const html = await response.text();
@@ -71,8 +81,14 @@ describe("hosted developer studio (/studio)", () => {
     expect(html).toContain("/api/auth/sign-"); // cookie auth, same origin
   });
 
+  it("serves the FontPicker catalog shim", async () => {
+    const body = await (await fetch(url("/developer-api/font-catalog"))).json();
+    expect(Array.isArray((body as { fonts: string[] }).fonts)).toBe(true);
+    expect((body as { fonts: string[] }).fonts.length).toBeGreaterThan(10);
+  });
+
   it("ships the raw ⇄ visual toggle and the visual builders", async () => {
-    const html = await (await fetch(url("/studio"))).text();
+    const html = await (await fetch(url("/studio-lite"))).text();
     expect(html).toContain('id="mode-visual"'); // the toggle
     expect(html).toContain('id="mode-raw"');
     expect(html).toContain('id="v-fields"'); // collection field-row builder
