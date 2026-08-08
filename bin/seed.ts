@@ -177,7 +177,7 @@ export async function diff(context: SeedContext): Promise<PlanEntry[]> {
   const plan: PlanEntry[] = [];
   for (const row of rows) {
     const path = `projects/${project}/${row.plural}/${row.slug}`;
-    const current = await call("GET", path);
+    const current = await call("GET", `${path}?locale=all`); // authoring shape: raw maps
     if (current.status === 404) plan.push({ path, file: row.file, action: "create" });
     else if (!current.ok) throw new Error(`GET ${path} → ${current.status}`);
     else {
@@ -225,12 +225,12 @@ export async function push(
       headers["Authorization"] = `Bearer ${token}`;
     }
     const desired = resolveEnv(row.body) as Json;
-    const current = await call("GET", path, undefined, headers);
+    const current = await call("GET", `${path}?locale=all`, undefined, headers); // raw maps
     if (current.ok && equal((await current.clone().json()) as Json, desired)) {
       noops += 1; // TRUE no-op: no Apply, no update_time churn, no events (§4)
     } else {
       const etag = current.ok ? current.headers.get("etag") : null;
-      const put = await call("PUT", path, desired, { ...headers, ...(etag ? { "If-Match": etag } : {}) });
+      const put = await call("PUT", `${path}?locale=all`, desired, { ...headers, ...(etag ? { "If-Match": etag } : {}) });
       if (!put.ok) throw new Error(`PUT ${path} → ${put.status}: ${(await put.text()).slice(0, 200)}`);
       applied += 1;
       log(`${current.status === 404 ? "create" : "update"} ${path}`);
@@ -272,7 +272,7 @@ export async function pull(context: SeedContext, adopt: string[] = []): Promise<
   }
   let written = 0;
   for (const target of [...targets].sort()) {
-    const current = await call("GET", `projects/${project}/${target}`);
+    const current = await call("GET", `projects/${project}/${target}?locale=all`);
     if (!current.ok) continue; // deleted server-side; prune will reconcile
     const body = stripOutputOnly((await current.json()) as Json);
     const file = join(context.dir, `${target}.json`);
