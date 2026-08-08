@@ -1,0 +1,59 @@
+import { drizzle } from "drizzle-orm/d1";
+import * as schema from "./db/schema";
+import { setDb, type AppDb } from "./db/registry";
+import { setInstances } from "./server/runtime-config";
+import type { ServiceInstance } from "hono-aep-cms";
+import servicesArtifact from "../dist/services.json";
+import { setEmbedder } from "./server/embed";
+
+/**
+ * The Cloudflare Worker entry: install D1 into the drizzle seam and the
+ * bundled service instances, wire the Workers-AI embedder, then reuse the
+ * runtime-neutral handler (./server/app). Built once per isolate.
+ */
+
+type Env = {
+  DB: unknown;
+  AI?: { run: (model: string, input: { text: string[] }) => Promise<{ data: number[][] }> };
+  BETTER_AUTH_URL?: string;
+};
+
+let handlePromise: Promise<(request: Request) => Promise<Response>> | undefined;
+let tickPromise: Promise<() => Promise<unknown>> | undefined;
+
+async function boot(env: Env): Promise<{
+  handle: (request: Request) => Promise<Response>;
+  tick: () => Promise<unknown>;
+}> {
+  setDb(drizzle(env.DB as Parameters<typeof drizzle>[0], { schema }) as unknown as AppDb);
+  setInstances(servicesArtifact as ServiceInstance[]);
+  // Real semantic search: @cf/baai/bge-m3 over the AI binding (Workers AI).
+  if (env.AI) {
+    setEmbedder(async (text: string) => {
+      const out = await env.AI!.run("@cf/baai/bge-m3", { text: [text] });
+      return out.data[0]!;
+    });
+  }
+  const { createHandler } = await import("./server/app");
+  const { jobs } = await import("./server/services");
+  return { handle: createHandler(), tick: () => (jobs ? jobs.tick() : Promise.resolve()) };
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    handlePromise ??= boot(env).then((b) => {
+      tickPromise = Promise.resolve(b.tick);
+      return b.handle;
+    });
+    return (await handlePromise)(request);
+  },
+  async scheduled(_event: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }): Promise<void> {
+    handlePromise ??= boot(env).then((b) => {
+      tickPromise = Promise.resolve(b.tick);
+      return b.handle;
+    });
+    await handlePromise;
+    const tick = await tickPromise!;
+    ctx.waitUntil(tick());
+  },
+};

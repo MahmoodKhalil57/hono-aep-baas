@@ -1,10 +1,11 @@
 {
   "config": {
     "embeddings": {
-      "provider": "none"
+      "model": "@cf/baai/bge-m3",
+      "provider": "workers-ai"
     }
   },
-  "description": "Lexical search over collection rows (local provider): AEP-136 POST /{plural}:search, ranked by term coverage. Set embeddings.provider to workers-ai/openai for semantic + hybrid ranking (behind the seam).",
+  "description": "Search over collection rows: lexical everywhere; SEMANTIC + hybrid (RRF) on Workers via @cf/baai/bge-m3 (the AI binding provides the embedder). Local Bun has no embedder \u2192 lexical only.",
   "kind": "search",
   "provider": "local"
 }

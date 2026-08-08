@@ -1,4 +1,4 @@
-import { readServices, resolveInstance, type ServiceInstance } from "hono-aep-cms";
+import { resolveInstance, type ServiceInstance } from "hono-aep-cms";
 import { createAuthn, registerAuthnKind, type Authn } from "hono-aep-auth";
 import { createJobs, registerJobsKind, type JobHandler, type JobsEngine } from "hono-aep-jobs";
 import {
@@ -24,8 +24,9 @@ registerBillingKind();
 registerFlagsKind();
 registerSearchKind();
 
-const appRoot = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
-export const instances: ServiceInstance[] = readServices(appRoot);
+import { getInstances } from "./runtime-config";
+import { getEmbedder } from "./embed";
+export const instances: ServiceInstance[] = getInstances();
 
 let notificationsRef: Notifications | null = null;
 const handlers: Record<string, JobHandler> = createJobHandlers({
@@ -99,5 +100,7 @@ export const flags: Flags | null = (() => {
 
 export const search: Search | null = (() => {
   const instance = resolveInstance(instances, "search");
-  return instance ? createSearch({ instance, db }) : null;
+  if (!instance) return null;
+  const embed = getEmbedder();
+  return createSearch({ instance, db, ...(embed ? { embed } : {}) });
 })();
