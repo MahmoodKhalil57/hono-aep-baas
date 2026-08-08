@@ -160,3 +160,36 @@ describe("auth pools over HTTP", () => {
     ).toBe(201);
   }, 40_000);
 });
+
+describe("pool lifecycle mail through notifications (auth-pools.md §1.7)", () => {
+  it("a reset request enqueues an email delivery via the notifications instance", async () => {
+    const cookie = await builderSignUp("mailer");
+    const project = (await (
+      await fetch(url("/v1/projects"), {
+        method: "POST",
+        headers: { ...json, Cookie: cookie },
+        body: JSON.stringify({ display_name: "Mailed", auth_pool: { emailPassword: { enabled: true } } }),
+      })
+    ).json()) as { path: string };
+    await endUserSignUp(project.path, "resetme@example.com");
+
+    const reset = await fetch(url(`/v1/${project.path}/auth/request-password-reset`), {
+      method: "POST",
+      headers: { ...json, Origin: "https://someone.github.io" },
+      body: JSON.stringify({ email: "resetme@example.com", redirectTo: "https://x.dev/reset" }),
+    });
+    expect(reset.status).toBe(200);
+
+    // The delivery ran through the queue (local provider logs); it shows on
+    // the builder's authenticated operations surface.
+    let deliver: { done: boolean; ok?: boolean; metadata?: { type?: string } } | undefined;
+    for (let attempt = 0; attempt < 20 && !deliver?.done; attempt += 1) {
+      await new Promise((r) => setTimeout(r, 500));
+      const ops = (await (
+        await fetch(url("/v1/operations"), { headers: { Cookie: cookie } })
+      ).json()) as { results: { done: boolean; ok?: boolean; metadata?: { type?: string } }[] };
+      deliver = ops.results.find((op) => op.metadata?.type === "notifications.deliver" && op.done);
+    }
+    expect(deliver?.ok).toBe(true);
+  }, 40_000);
+});

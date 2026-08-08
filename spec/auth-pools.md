@@ -33,6 +33,11 @@ project.
 7. Auth-lifecycle emails belong to the POOL (verification, reset,
    change-email, deletion) and ride the project's notifications
    instance for transport — templates overridable per project.
+   IMPLEMENTED: verification + password-reset via a `sendEmail` seam
+   the baas fills with `notifications.notify({to:{email},content})` —
+   better-auth never learns about notifications; one delivery pipeline
+   (jobs, providers, report cards). change-email + verified-delete are
+   the remaining lifecycle flows.
 
 ### 1a. Static-origin sessions — IMPLEMENTED
 

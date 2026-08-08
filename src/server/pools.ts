@@ -3,6 +3,8 @@ import { createAuthPool, type AuthPool, type AuthPoolConfig } from "hono-aep-aut
 import type { Principal } from "hono-aep";
 import { db } from "../db/registry";
 import { projects } from "../db/schema";
+import { notifications } from "./services";
+import type { PoolEmailSender } from "hono-aep-auth";
 
 /**
  * Per-project END-USER auth pools (baas/auth-pools.md): a project whose
@@ -33,6 +35,20 @@ export async function projectPool(projectId: string): Promise<AuthPool | null> {
         baseUrl: baseUrl(),
         basePath: `/v1/projects/${projectId}/auth`,
         config,
+        // §1.7: lifecycle mail rides the project's notifications instance —
+        // one delivery pipeline (jobs, providers, report cards), no bespoke
+        // mailer. Absent instance → the pool logs (dev-safe).
+        ...(notifications
+          ? {
+              sendEmail: (async ({ to, subject, body }) => {
+                await notifications!.notify({
+                  to: { email: to },
+                  content: { subject, body },
+                  channels: ["email"],
+                });
+              }) satisfies PoolEmailSender,
+            }
+          : {}),
         env: process.env,
       })
     : null;
