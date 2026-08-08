@@ -143,8 +143,8 @@ adds it in its own thin server (collections.md §4), never hosted.
 
 A guest is not a special case of commerce — a guest is an ANONYMOUS
 PRINCIPAL (auth-pools.md §1.8). The storefront calls
-`POST auth/sign-in/anonymous` (one button, no form) and receives a
-bearer session like any other; every flow above then works UNCHANGED,
+`POST auth/sign-in/anonymous` and receives a bearer session like any
+other; every flow above then works UNCHANGED,
 because carts, orders, and wishlists are owner-scoped to principals, not
 to "accounts". Consequences, all by construction rather than by code:
 
@@ -163,9 +163,19 @@ to "accounts". Consequences, all by construction rather than by code:
    them (they hold a session); an app that wants member-only surfaces
    uses entitlements or roles, not "has an account".
 
+5. **Guest is the DEFAULT, not a choice.** The storefront SHOULD mint
+   the anonymous session implicitly on the FIRST action that needs a
+   principal (add-to-cart, wishlist, review) — no "continue as guest"
+   button, no interruption, no gate before checkout. Sign-in/sign-up
+   stays offered throughout the flow (the nav treats an anonymous
+   session as signed-out for its call-to-action), and taking it at ANY
+   point — before or after paying — triggers §3a.3's re-parenting.
+
 Conformance addition: a deployment enabling guest checkout MUST enable
 the pool's anonymous knob and SHOULD wire the link hook's re-parenting —
-an upgrade that silently orphans a guest's paid orders fails §3a.3.
+an upgrade that silently orphans a guest's paid orders fails §3a.3. A
+storefront that interposes an auth gate (even a guest button) before
+add-to-cart fails §3a.5's SHOULD.
 
 ## 4. Analytics (the PostHog use case)
 
