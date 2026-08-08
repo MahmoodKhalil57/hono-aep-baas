@@ -95,6 +95,8 @@ a `TODO(baas)` marker at their definition site in the suite specs
 | Per-project MCP endpoint | aep/mcp bridge (implemented) + keys (agents.md §3) | 2 |
 | Git config sync (`sync diff/push/pull`) | baas/sync.md — Apply-driven, sk_ auth | 2 |
 | Idempotent data seed (`seed diff/push/pull/destroy`, lock ledger, demo principals) | baas/seed.md — the data-plane sibling of sync | 2 |
+| Embedded in-page payment (neutral gateway, swappable drivers) | gateway spec (hono-aep-gateway) + commerce.md §3.2 | 3 |
+| Abstract delivery (virtual downloads → couriers/parcels, driver-neutral) | delivery spec (hono-aep-delivery) + commerce.md §3.4 | 3 |
 | Hosted themes (tweakcn documents → one `<link>` tag) | baas/site.md §1 | 2 |
 | Hosted Puck pages + BLOCK fragments ("a cms for some pages — or just some sections") | baas/site.md §1 + collections | 3 |
 | Static-SPA PWA + SEO/AEO (artifacts reified at build; prerender; installable off Pages) | baas/site.md §2 | 3 |

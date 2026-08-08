@@ -117,13 +117,17 @@ the commerce event name, `data` carries the properties) and a dedicated
    declared custom method): validates inventory, appends/merges the
    line, emits `product_added`. Remove/clear are the mirror verbs.
 2. **Checkout** — `POST carts/{c}:checkout` creates an `order` in
-   `pending` from the cart's live totals, then calls the billing kind's
-   checkout (baas/billing) with the order total as the amount and the
-   order path in metadata. The cart STAYS `active` — checkout is an
-   attempt, not a commitment; an abandoned or failed payment leaves
-   the shopper's cart exactly as it was.
-3. **Payment → order** — billing's verified provider webhook
-   (connections inbound → billing.applyEvent) fires the order's
+   `pending` from the cart's live totals, then opens payment in one of
+   two modes: `hosted` (the billing kind's provider-hosted session,
+   billing.md) or `embedded` (gateway.md — the NEUTRAL gateway's
+   createPayment returns `{gateway, clientToken, client}` and the
+   storefront renders the provider's element inside ITS OWN page; the
+   order coordinates ride the payment metadata). The cart STAYS
+   `active` — checkout is an attempt, not a commitment; an abandoned or
+   failed payment leaves the shopper's cart exactly as it was.
+3. **Payment → order** — the VERIFIED provider webhook — billing's for
+   hosted sessions, the gateway driver's normalized `payment.succeeded`
+   (gateway.md §2) for embedded payments — fires the order's
    `:pay` transition: `pending → paid`. THAT transition (aep/events)
    is what emits the trustworthy `order_completed`, which the
    notifications kind turns into the confirmation email and the
@@ -134,7 +138,11 @@ the commerce event name, `data` carries the properties) and a dedicated
    real, never before).
 4. **Fulfillment** — the order state machine, all declared transitions:
    `paid → fulfilled → shipped → delivered`, plus `→ refunded` /
-   `→ cancelled` (each emitting its event). Merchant-policied.
+   `→ cancelled` (each emitting its event). Merchant-policied — and
+   DRIVEN by the delivery kind (delivery.md §3): virtual deliveries
+   (download artifacts over media) walk the machine automatically on the
+   paid transition; courier/parcel drivers walk it from their provider
+   webhooks; `manual` stays the merchant's hand.
 5. **Discounts** — `POST discounts/{code}:validate {cart}` returns the
    computed discount or a denial reason (emits `coupon_applied` /
    `coupon_denied`). Applied at checkout as a line adjustment.
@@ -230,8 +238,11 @@ like §3a tenancy.
 ## 8. References
 
 - PostHog ecommerce-events spec (the event-taxonomy model this adopts)
-- baas: collections.md (the resource model), billing.md (checkout →
-  order), quotas.md (track rate limit), site.md (storefront rendering)
+- baas: collections.md (the resource model), billing.md (hosted
+  checkout, subscriptions), quotas.md (track rate limit), site.md
+  (storefront rendering)
+- gateway.md (the NEUTRAL payment-gateway contract behind embedded
+  checkout), delivery.md (the NEUTRAL delivery contract driving §3.4)
 - suite: aep/events (derived-event grammar), notifications / connections
   / search / observability kinds, AEP-136 (custom verbs), AEP-216
   (order state machine)
