@@ -6,7 +6,8 @@
 export * from "./schema.gen";
 import { tables as generatedTables } from "./schema.gen";
 export { user, session, account, verification, apiKey } from "hono-aep-auth";
-import { apiKeyTables, authTables } from "hono-aep-auth";
+export { poolUser, poolSession, poolAccount, poolVerification } from "hono-aep-auth";
+import { apiKeyTables, authTables, poolTables } from "hono-aep-auth";
 export { operation } from "hono-aep-jobs";
 import { jobsTables } from "hono-aep-jobs";
 export { target, subscriber, message } from "hono-aep-notifications";
@@ -21,5 +22,6 @@ export const tables = {
   ...notificationTables,
   ...jsonRowsTables,
   ...apiKeyTables,
+  ...poolTables,
   ...authTables,
 };

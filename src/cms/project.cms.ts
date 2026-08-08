@@ -10,6 +10,10 @@ export const projectCms = cmsResource({
     display_name: z.string().min(1).max(120).meta({
       description: "The project's name.",
     }),
+    auth_pool: z.record(z.string(), z.any()).optional().meta({
+      description:
+        "END-USER auth pool (baas/auth-pools.md): presence enables /v1/projects/{p}/auth/* (better-auth, bearer-first). Config: {emailPassword?{enabled}, session?{ttlSeconds}}.",
+    }),
     site: z.record(z.string(), z.any()).optional().meta({
       description:
         "Site config for the consumer frontend (baas/site.md §2): {url, description?, locale?, name?, app?{shortName,display,shortcuts,…}} — feeds the reified sitemap/robots/llms/manifest artifacts.",

@@ -12,6 +12,7 @@ import { themeCms } from "../cms/theme.cms";
 import { pageCms } from "../cms/page.cms";
 import { blockCms } from "../cms/block.cms";
 import { invalidateProject } from "./jit-collections";
+import { invalidatePool } from "./pools";
 
 /**
  * mizan-gpp's resource model (baas/README.md §2): tenancy IS the resource
@@ -31,6 +32,9 @@ const forbidden = (detail: string): AepProblem =>
     detail,
   });
 
+/* Project writes can change auth_pool — drop the pool cache. */
+const projectAfter = ({ id }: { id: string }) => invalidatePool(id);
+
 /** `projects/{project}` — the tenancy root; created_by stamped server-side. */
 export const project = defineResource({
   ...composable(projectCms),
@@ -49,6 +53,9 @@ export const project = defineResource({
       }
       return { ...data, created_by: (previous?.["created_by"] as string) ?? principal.userId };
     },
+    afterCreate: projectAfter,
+    afterUpdate: projectAfter,
+    afterApply: projectAfter,
   },
 });
 
@@ -142,6 +149,7 @@ const RESERVED_PLURALS = new Set([
   "themes",
   "pages",
   "blocks",
+  "auth",
   "keys",
   "operations",
   "notifications",

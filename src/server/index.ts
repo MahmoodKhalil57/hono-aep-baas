@@ -9,6 +9,7 @@ import { forms, tables, themes } from "../db/schema";
 import { drizzleAepStorage } from "hono-aep-drizzle";
 import { block, collection, form, page, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
+import { projectPool } from "./pools";
 import { authn, eventSink, jobs, notifications, principalFrom } from "./services";
 
 /**
@@ -60,7 +61,7 @@ const probes = createHealthProbes({
  */
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Expose-Headers": "ETag, X-Request-Id",
+  "Access-Control-Expose-Headers": "ETag, X-Request-Id, set-auth-token",
 } as const;
 
 const preflight = (): Response =>
@@ -189,6 +190,13 @@ const server = Bun.serve({
       // where {plural} is not a compiled child → the project's declared
       // collections app (live the moment its document is applied).
       const segments = url.pathname.split("/"); // ["", "v1", "projects", p, seg, …]
+      // END-USER auth pools (auth-pools.md): better-auth mounted per
+      // project, bearer-first; basePath matches, so no path rewriting.
+      if (segments[2] === "projects" && segments[3] && segments[4] === "auth") {
+        const pool = await projectPool(segments[3]);
+        if (!pool) return corsify(Response.json({ title: "No auth pool declared." }, { status: 404 }));
+        return corsify(await pool.handler(request));
+      }
       // Hosted theme serving (baas/site.md §1): one <link> tag restyles the
       // consumer's whole SPA — doubled selectors beat its bundled defaults.
       if (segments[2] === "projects" && segments[3] && segments[4] === "theme.css" && !segments[5]) {

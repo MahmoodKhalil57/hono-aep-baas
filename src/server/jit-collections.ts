@@ -5,6 +5,7 @@ import { jsonRowsStorage } from "hono-aep-drizzle";
 import { db } from "../db/registry";
 import { collections } from "../db/schema";
 import { eventSink, principalFrom } from "./services";
+import { poolPrincipal } from "./pools";
 
 /**
  * The JIT dispatcher (baas/collections.md §0-1): every project's declared
@@ -57,7 +58,12 @@ export async function jitProjectApp(
     storage: jsonRowsStorage({ db, scope: `projects/${projectId}` }),
     serviceName: "baas.hono-aep.dev",
     basePath: `/v1/projects/${projectId}`,
-    authorization: { principal: principalFrom },
+    authorization: {
+      // Builder session/key first; else the project's END-USER pool
+      // (bearer) — both flow through the same policy vocabulary.
+      principal: async (c) =>
+        (await principalFrom(c)) ?? (await poolPrincipal(projectId, c.req.raw.headers)),
+    },
     ...(sink ? { onEvent: sink } : {}),
   });
   cache.set(projectId, app);
@@ -65,4 +71,4 @@ export async function jitProjectApp(
 }
 
 /** Compiled child plurals the dispatcher must never intercept. */
-export const COMPILED_CHILD_PLURALS = new Set(["forms", "collections", "themes", "pages", "blocks"]);
+export const COMPILED_CHILD_PLURALS = new Set(["forms", "collections", "themes", "pages", "blocks", "auth"]);
