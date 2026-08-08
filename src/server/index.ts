@@ -202,12 +202,13 @@ const server = Bun.serve({
         const jit = await jitProjectApp(segments[3]);
         if (!jit) return corsify(Response.json({ title: "No collections declared." }, { status: 404 }));
         const plural = segments[4].slice(0, -":search".length);
-        const bodyJson = (await request.json().catch(() => ({}))) as { query?: string; limit?: number };
+        const bodyJson = (await request.json().catch(() => ({}))) as { query?: string; limit?: number; mode?: "lexical" | "semantic" | "hybrid" };
         const hits = await search.search({
           scope: `projects/${segments[3]}`,
           collection: plural,
           query: String(bodyJson.query ?? ""),
           ...(bodyJson.limit ? { limit: bodyJson.limit } : {}),
+          ...(bodyJson.mode ? { mode: bodyJson.mode } : {}),
         });
         // Hydrate through the JIT app (auth-forwarded) — a hit the caller
         // may not read simply drops out.
