@@ -530,6 +530,29 @@ describe("definition gate = the full serving pipeline (AEP-122 poison guard)", (
   }, 30_000);
 });
 
+describe("localized page variants (cms/localization.md §2)", () => {
+  it("pages/{slug}?locale resolves slug@locale through the chain; base is terminal", async () => {
+    const cookie = await signUp("pagewright");
+    const project = await makeProject(cookie, "Pages");
+    const pid = project.split("/")[1]!;
+    await fetch(url(`/v1/${project}`), {
+      method: "PATCH", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ site: { locales: { default: "en", supported: ["en", "ar", "fr-CA"], fallback: { "fr-CA": "ar" } } } }),
+    });
+    const doc = (title: string) => JSON.stringify({ title, data: { content: [], root: {} } });
+    // Base page + the Arabic sibling variant (slug@locale, AIP-133 id).
+    expect((await fetch(url(`/v1/${project}/pages/about`), { method: "PUT", headers: { ...json, Cookie: cookie }, body: doc("About us") })).status).toBe(201);
+    expect((await fetch(url(`/v1/${project}/pages/about@ar`), { method: "PUT", headers: { ...json, Cookie: cookie }, body: doc("من نحن") })).status).toBe(201);
+    const titleAt = async (query: string) =>
+      (((await (await fetch(url(`/v1/projects/${pid}/pages/about${query}`))).json()) as { title: string }).title);
+    expect(await titleAt("")).toBe("About us"); // no locale → base
+    expect(await titleAt("?locale=ar")).toBe("من نحن"); // exact variant
+    expect(await titleAt("?locale=fr-CA")).toBe("من نحن"); // fr-CA → ar via the chain
+    expect(await titleAt("?locale=de")).toBe("About us"); // unsupported → terminal base
+    expect(await titleAt("?locale=en")).toBe("About us"); // default never probes variants
+  }, 30_000);
+});
+
 describe("per-project media (media.md)", () => {
   it("authenticated upload → public download; mutation is owner-only; delete removes the blob", async () => {
     const cookie = await signUp("uploader");

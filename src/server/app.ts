@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { aepApp, attachMcp, openApiDocument, type Json } from "hono-aep";
 import { createApiKey, keyPrincipal } from "hono-aep-auth";
 import { createHealthProbes } from "hono-aep-observability";
-import { parseThemeCss, renderThemeCss } from "hono-aep-cms";
+import { fallbackChain, localizationConfigSchema, parseThemeCss, renderThemeCss } from "hono-aep-cms";
 import { contextOf } from "hono-aep-flags";
 import { projectCommerce } from "./commerce";
 import { db } from "../db/registry";
@@ -504,6 +504,30 @@ export function createHandler(): (request: Request) => Promise<Response> {
           const { localizedJitFetch } = await import("./localize");
           return corsify(await localizedJitFetch(jit, request, url, stripped));
         }
+      }
+      // Localized page variants (cms/localization.md §2): GET pages/{slug}
+      // ?locale=X resolves the sibling `slug@locale` through the fallback
+      // chain, landing on the base document as the terminal fallback.
+      if (
+        segments[2] === "projects" && segments[3] && segments[4] === "pages" &&
+        segments[5] && !segments[5].includes("@") && !segments[5].includes(":") &&
+        !segments[6] && request.method === "GET" && url.searchParams.get("locale")
+      ) {
+        const locale = url.searchParams.get("locale")!;
+        const projectRows = await db.select().from(projects).where(eq(projects.id, segments[3])).limit(1);
+        const site = projectRows[0]?.site as { locales?: unknown } | null;
+        const parsed = localizationConfigSchema.safeParse(site?.locales);
+        if (parsed.success && locale !== parsed.data.default) {
+          for (const tag of fallbackChain(locale, parsed.data)) {
+            if (tag === parsed.data.default) break; // base document = terminal fallback
+            const variant = await aep.app.fetch(
+              new Request(`${url.origin}/projects/${segments[3]}/pages/${segments[5]}@${tag}`, { headers: request.headers }),
+            );
+            if (variant.ok) return corsify(variant);
+          }
+        }
+        // fall through to the base document (locale stripped is unnecessary —
+        // the AEP GET ignores unknown query params)
       }
       return corsify(
         await aep.app.fetch(

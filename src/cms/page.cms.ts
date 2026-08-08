@@ -4,7 +4,9 @@ import { cmsResource } from "hono-aep-cms";
 
 export const pageCms = cmsResource({
   singular: "page",
-  idPattern: /^[a-z][a-z0-9-]{0,62}$/,
+  // A localized variant is a SIBLING document `slug@<bcp47>` (cms/
+  // localization.md §2 — `@` cannot collide with the slug grammar).
+  idPattern: /^[a-z][a-z0-9-]{0,62}(@[A-Za-z][A-Za-z0-9-]{1,15})?$/,
   plural: "pages",
   schema: z.object({
     title: z.string().min(1).max(160),
