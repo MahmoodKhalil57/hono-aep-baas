@@ -19,6 +19,7 @@
     "hono-aep-auth": "file:../customPackages/hono-aep-auth",
     "hono-aep-billing": "file:../customPackages/hono-aep-billing",
     "hono-aep-cms": "file:../customPackages/hono-aep-cms",
+    "hono-aep-commerce": "file:../customPackages/hono-aep-commerce",
     "hono-aep-connections": "file:../customPackages/hono-aep-connections",
     "hono-aep-drizzle": "file:../customPackages/hono-aep-drizzle",
     "hono-aep-flags": "file:../customPackages/hono-aep-flags",

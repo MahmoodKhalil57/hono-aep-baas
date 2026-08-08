@@ -7,6 +7,7 @@ import { createApiKey, keyPrincipal } from "hono-aep-auth";
 import { createHealthProbes } from "hono-aep-observability";
 import { parseThemeCss, renderThemeCss } from "hono-aep-cms";
 import { contextOf } from "hono-aep-flags";
+import { projectCommerce } from "./commerce";
 import { db } from "../db/registry";
 import { forms, tables, themes } from "../db/schema";
 import { drizzleAepStorage } from "hono-aep-drizzle";
@@ -222,6 +223,62 @@ export function createHandler(): (request: Request) => Promise<Response> {
         }
         return corsify(Response.json({ results }));
       }
+      // Commerce (baas/commerce.md): cart + checkout + track. Cart/checkout
+      // need the end-user principal (owner); track is client analytics.
+      if (segments[2] === "projects" && segments[3] && segments[4] === "commerce" && segments[5] && !segments[6]) {
+        const pid = segments[3];
+        const commerce = projectCommerce(pid);
+        if (segments[5] === "track" && request.method === "POST") {
+          const ev = (await request.json().catch(() => ({}))) as { event?: string; properties?: Json };
+          if (eventSink && ev.event) await eventSink({ type: `projects.${pid}.commerce.${ev.event}`, path: `projects/${pid}/commerce`, time: new Date().toISOString(), data: ev.properties ?? {} });
+          return corsify(Response.json({ tracked: ev.event ?? null }, { status: 202 }));
+        }
+        // cart:add / cart:remove / cart / cart:checkout — the end user's cart.
+        const principal =
+          (await principalFrom({ req: { raw: request, header: (n: string) => request.headers.get(n) } } as never)) ??
+          (await (await import("./pools")).poolPrincipal(pid, request.headers));
+        if (!principal) return corsify(Response.json({ title: "Sign in." }, { status: 401 }));
+        const customer = principal.userId;
+        if (segments[5] === "cart" && request.method === "GET")
+          return corsify(Response.json(await commerce.getCart({ scope: `projects/${pid}`, customer })));
+        if (segments[5] === "cart:add" && request.method === "POST") {
+          const b = (await request.json().catch(() => ({}))) as { variant?: string; quantity?: number };
+          const r = await commerce.addItem({ scope: `projects/${pid}`, customer, variant: String(b.variant), quantity: b.quantity ?? 1 });
+          return corsify(Response.json(r.cart));
+        }
+        if (segments[5] === "cart:remove" && request.method === "POST") {
+          const b = (await request.json().catch(() => ({}))) as { variant?: string };
+          const r = await commerce.removeItem({ scope: `projects/${pid}`, customer, variant: String(b.variant) });
+          return corsify(Response.json(r.cart));
+        }
+        if (segments[5] === "cart:checkout" && request.method === "POST") {
+          const { order } = await commerce.checkout({ scope: `projects/${pid}`, customer });
+          // Bridge to billing (commerce.md §3): charge the order TOTAL (an
+          // ad-hoc amount — an order snapshots its own price, it is not a
+          // catalog product). local self-serve settles instantly, so we fire
+          // the :pay transition here; a real provider (stripe) returns a
+          // hosted session and the paid webhook fires :pay (see below).
+          if (billing) {
+            const session = await billing
+              .checkoutAmount({
+                amountCents: order.total_cents,
+                currency: order.currency,
+                productName: `Order ${order.id.slice(0, 8)}`,
+                principal: customer,
+                metadata: { order: order.id, project: pid },
+                successUrl: `${url.origin}/v1/projects/${pid}/commerce/order?ok=${order.id}`,
+                cancelUrl: `${url.origin}/v1/projects/${pid}/commerce/order?cancel=${order.id}`,
+              })
+              .catch(() => null);
+            if (session && "paid" in session) {
+              const { order: paid } = await commerce.pay({ orderId: order.id, payment: "local" });
+              return corsify(Response.json({ order: paid }));
+            }
+            return corsify(Response.json({ order, checkout: session }));
+          }
+          return corsify(Response.json({ order }));
+        }
+      }
       // Flags (OpenFeature): server-evaluate the whole set against the
       // resolved principal (session/key/pool) so the SPA's first paint
       // carries values — no flash. Entitlement rules compose with billing.
@@ -265,10 +322,21 @@ export function createHandler(): (request: Request) => Promise<Response> {
       ) {
         if (!billing) return corsify(Response.json({ title: "No billing." }, { status: 404 }));
         try {
+          const body = await request.text();
           const result = await billing.handleWebhook({
             signature: request.headers.get("Stripe-Signature"),
-            body: await request.text(),
+            body,
           });
+          // Payment → order (commerce.md §3 flow 3): a VERIFIED paid session
+          // carrying order coordinates fires the order's :pay transition —
+          // THAT is what emits the trustworthy order_completed + decrements
+          // inventory. handleWebhook already verified the signature above.
+          const { stripeEventToOrder } = await import("hono-aep-billing");
+          const orderRef = stripeEventToOrder(JSON.parse(body) as Json);
+          if (orderRef) {
+            const commerce = projectCommerce(orderRef.projectId ?? segments[3]!);
+            await commerce.pay({ orderId: orderRef.orderId, payment: `stripe:${orderRef.eventId}` }).catch(() => null);
+          }
           return corsify(Response.json(result, { status: 202 }));
         } catch (problem) {
           return corsify(Response.json({ title: (problem as Error).message }, { status: 401 }));

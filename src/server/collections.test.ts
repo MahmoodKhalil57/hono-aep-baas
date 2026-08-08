@@ -507,3 +507,39 @@ describe("lexical search over collections (search kind, AEP-136)", () => {
     expect(after.results.map((r) => r.path.split("/").pop())).toEqual(["b"]);
   }, 30_000);
 });
+
+describe("commerce cart→checkout (baas/commerce.md)", () => {
+  it("a pool user adds a product to cart and checks out to a pending order", async () => {
+    const cookie = await signUp("merchant");
+    const project = await makeProject(cookie, "Shop");
+    const pid = project.split("/")[1]!;
+    // a products collection + one product
+    await fetch(url(`/v1/${project}/collections/catalog`), {
+      method: "PUT", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ definition: { singular: "product", plural: "products", fields: [{ name: "name", type: "string", required: true }, { name: "price_cents", type: "number", integer: true }], policy_create: "authenticated", policy_get: "public", policy_list: "public" } }),
+    });
+    await fetch(url(`/v1/${project}/products?id=tee`), { method: "POST", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ name: "Tee", price_cents: 1500 }) });
+    // pool user
+    const tok = await (async () => {
+      const r = await fetch(url(`/v1/${project}/auth/sign-up/email`), { method: "POST", headers: json, body: JSON.stringify({ email: `buyer-${Date.now()}@x.com`, password: "supersecret1", name: "B" }) });
+      return r.headers.get("set-auth-token")!;
+    })();
+    // enable the pool first (project needs auth_pool)
+    await fetch(url(`/v1/${project}`), { method: "PATCH", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ auth_pool: {} }) });
+    const tok2 = (await (await fetch(url(`/v1/${project}/auth/sign-up/email`), { method: "POST", headers: json, body: JSON.stringify({ email: `buyer2-${Date.now()}@x.com`, password: "supersecret1", name: "B2" }) })).headers.get("set-auth-token"))!;
+    void tok;
+    const add = await fetch(url(`/v1/projects/${pid}/commerce/cart:add`), { method: "POST", headers: { ...json, Authorization: `Bearer ${tok2}` }, body: JSON.stringify({ variant: "tee", quantity: 2 }) });
+    expect(add.status).toBe(200);
+    const cart = (await add.json()) as { items: unknown[]; total_cents: number };
+    expect(cart.items).toHaveLength(1);
+    expect(cart.total_cents).toBe(3000);
+    const co = await fetch(url(`/v1/projects/${pid}/commerce/cart:checkout`), { method: "POST", headers: { ...json, Authorization: `Bearer ${tok2}` }, body: "{}" });
+    expect(co.status).toBe(200);
+    const body = (await co.json()) as { order: { status: string; total_cents: number } };
+    // local billing settles instantly → the order fires :pay in the same
+    // request (commerce.md §3); a stripe provider would leave it pending
+    // until the paid webhook. Either way the snapshot total is authoritative.
+    expect(body.order.status).toBe("paid");
+    expect(body.order.total_cents).toBe(3000);
+  }, 30_000);
+});

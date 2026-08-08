@@ -19,6 +19,8 @@ export { entitlementGrant } from "hono-aep-billing";
 import { billingTables } from "hono-aep-billing";
 export { searchDocument } from "hono-aep-search";
 import { searchTables } from "hono-aep-search";
+export { cart, order } from "hono-aep-commerce";
+import { commerceTables } from "hono-aep-commerce";
 
 export const tables = {
   ...generatedTables,
@@ -27,6 +29,7 @@ export const tables = {
   ...jsonRowsTables,
   ...billingTables,
   ...searchTables,
+  ...commerceTables,
   ...apiKeyTables,
   ...poolTables,
   ...authTables,
