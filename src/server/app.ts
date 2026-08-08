@@ -4,7 +4,7 @@
 import { eq } from "drizzle-orm";
 import { aepApp, attachMcp, openApiDocument, type Json } from "hono-aep";
 import { createApiKey, keyPrincipal } from "hono-aep-auth";
-import { createHealthProbes } from "hono-aep-observability";
+import { createHealthProbes, startWideEvent } from "hono-aep-observability";
 import { fallbackChain, localizationConfigSchema, parseThemeCss, renderThemeCss } from "hono-aep-cms";
 import { contextOf } from "hono-aep-flags";
 import { projectCommerce } from "./commerce";
@@ -188,6 +188,39 @@ export function createHandler(): (request: Request) => Promise<Response> {
     },
     "/v1/*": async (request: Request) => {
       if (request.method === "OPTIONS") return preflight();
+      // ONE wide event per API request (observability): trace propagated
+      // from the caller's traceparent or minted; route class keeps ids out
+      // (cardinality-safe); emitted as one JSON line — wrangler tail /
+      // Workers Logs / any shipper ingest it. The inner handler does the
+      // work; this wrapper only observes.
+      const observed = new URL(request.url);
+      const parts = observed.pathname.split("/");
+      const routeClass = parts
+        .map((part, at) =>
+          at === 3 && parts[2] === "projects" ? ":project"
+          : at >= 4 && /^[0-9a-f-]{20,}$/.test(part.split(":")[0] ?? "") ? (part.includes(":") ? `:id:${part.split(":")[1]}` : ":id")
+          : part)
+        .join("/");
+      const wide = startWideEvent({
+        service: "mizan-gpp",
+        method: request.method,
+        route: routeClass,
+        traceparent: request.headers.get("traceparent"),
+      });
+      if (parts[2] === "projects" && parts[3]) wide.set("project", parts[3]);
+      try {
+        const response = await handleV1(request);
+        wide.finish(response.status);
+        return response;
+      } catch (problem) {
+        wide.set("error", (problem as Error).message.slice(0, 200));
+        wide.finish(500);
+        throw problem;
+      }
+    },
+  } as const;
+
+  const handleV1 = async (request: Request): Promise<Response> => {
       const url = new URL(request.url);
       // JIT dispatch (baas/collections.md): /v1/projects/{p}/{plural}/…
       // where {plural} is not a compiled child → the project's declared
@@ -251,6 +284,46 @@ export function createHandler(): (request: Request) => Promise<Response> {
         }
         const stripped = `/${segments.slice(4).join("/")}`;
         return corsify(await media.app.fetch(new Request(`${url.origin}${stripped}${url.search}`, request)));
+      }
+      // Merchant stats (observability's analytics face over commerce):
+      // owner-only aggregates straight off the order snapshots — no
+      // separate analytics store to drift.
+      if (
+        segments[2] === "projects" && segments[3] && segments[4] === "commerce" &&
+        segments[5] === "stats" && !segments[6] && request.method === "GET"
+      ) {
+        const pid = segments[3];
+        const principal = await principalFrom({ req: { raw: request, header: (n: string) => request.headers.get(n) } } as never);
+        const projectRows = await db.select().from(projects).where(eq(projects.id, pid)).limit(1);
+        if (!principal || projectRows[0]?.created_by !== principal.userId) {
+          return corsify(Response.json({ title: "Only the project owner reads stats." }, { status: 403 }));
+        }
+        const { commerceTables } = await import("hono-aep-commerce");
+        const sdb = db as unknown as { select(): { from(t: unknown): { where(w: unknown): Promise<unknown[]> } } };
+        const scol = commerceTables.order as unknown as Record<"scope", never>;
+        const rows = (await sdb.select().from(commerceTables.order).where(eq(scol.scope, `projects/${pid}`))) as {
+          status: string; totalCents: number; items: { product_id?: string; name?: string; quantity?: number }[];
+        }[];
+        const PAID = new Set(["paid", "fulfilled", "shipped", "delivered"]);
+        const byStatus: Record<string, number> = {};
+        const byProduct = new Map<string, { name: string; units: number; revenue_cents: number }>();
+        let revenue = 0;
+        for (const row of rows) {
+          byStatus[row.status] = (byStatus[row.status] ?? 0) + 1;
+          if (!PAID.has(row.status)) continue;
+          revenue += row.totalCents;
+          for (const item of row.items ?? []) {
+            const key = item.product_id ?? "unknown";
+            const entry = byProduct.get(key) ?? { name: item.name ?? key, units: 0, revenue_cents: 0 };
+            entry.units += item.quantity ?? 1;
+            byProduct.set(key, entry);
+          }
+        }
+        const top = [...byProduct.entries()]
+          .map(([product, data]) => ({ product, ...data }))
+          .sort((a, b) => b.units - a.units)
+          .slice(0, 10);
+        return corsify(Response.json({ orders: rows.length, revenue_cents: revenue, by_status: byStatus, top_products: top }));
       }
       // Fulfillment (commerce.md §3.4): POST /commerce/orders/{id}:advance
       // {to, reason} — MERCHANT-policied: the project owner's builder
@@ -534,10 +607,6 @@ export function createHandler(): (request: Request) => Promise<Response> {
           new Request(`${url.origin}${url.pathname.replace(/^\/v1/, "") || "/"}${url.search}`, request),
         ),
       );
-    },
-    "/livez": (request: Request) => probes.fetch(request),
-    "/readyz": (request: Request) => probes.fetch(request),
-    "/healthz": (request: Request) => probes.fetch(request),
   };
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
@@ -552,9 +621,7 @@ export function createHandler(): (request: Request) => Promise<Response> {
     if (path === "/api/auth/*".replace("*", "") || path.startsWith("/api/auth/")) return routes["/api/auth/*"](request);
     if (path === "/v1/keys:mint") return routes["/v1/keys:mint"].POST(request);
     if (path === "/v1/openapi.json") return routes["/v1/openapi.json"]();
-    if (path === "/livez") return routes["/livez"](request);
-    if (path === "/readyz") return routes["/readyz"](request);
-    if (path === "/healthz") return routes["/healthz"](request);
+    if (path === "/livez" || path === "/readyz" || path === "/healthz") return probes.fetch(request);
     if (path.startsWith("/v1/")) return routes["/v1/*"](request);
     return Response.json({ title: "Not found." }, { status: 404 });
   };

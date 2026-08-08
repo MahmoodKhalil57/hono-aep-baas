@@ -28,7 +28,8 @@
     "hono-aep-search": "file:../customPackages/hono-aep-search",
     "zod": "^4.3.11",
     "hono-aep-media": "file:../customPackages/hono-aep-media",
-    "unstorage": "^1.17.0"
+    "unstorage": "^1.17.0",
+    "hono-aep-observability": "file:../customPackages/hono-aep-observability"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

@@ -624,6 +624,15 @@ describe("discounts + fulfillment over hosted collections (commerce.md §3.4-3.5
     // and an illegal jump is a clean 422
     const bad = await fetch(url(`/v1/projects/${pid}/commerce/orders/${co.order.id}:advance`), { method: "POST", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ to: "cancelled" }) });
     expect(bad.status).toBe(422);
+    // Merchant stats: owner-only aggregates off the order snapshots.
+    expect((await fetch(url(`/v1/projects/${pid}/commerce/stats`), { headers: { Authorization: `Bearer ${tok}` } })).status).toBe(403);
+    const stats = (await (await fetch(url(`/v1/projects/${pid}/commerce/stats`), { headers: { Cookie: cookie } })).json()) as {
+      orders: number; revenue_cents: number; by_status: Record<string, number>; top_products: { product: string; units: number }[];
+    };
+    expect(stats.orders).toBe(1);
+    expect(stats.revenue_cents).toBe(2400); // the discounted paid total
+    expect(stats.by_status["delivered"]).toBe(1);
+    expect(stats.top_products[0]).toMatchObject({ product: "kit", units: 1 });
   }, 30_000);
 });
 
