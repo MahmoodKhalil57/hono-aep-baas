@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { aepApp, attachMcp, openApiDocument, type Json } from "hono-aep";
 import { createApiKey, keyPrincipal } from "hono-aep-auth";
 import { createHealthProbes, startWideEvent } from "hono-aep-observability";
-import { fallbackChain, localizationConfigSchema, parseThemeCss, renderThemeCss } from "hono-aep-cms";
+import { fallbackChain, localizationConfigSchema, localizeRow, parseThemeCss, renderThemeCss } from "hono-aep-cms";
 import { contextOf } from "hono-aep-flags";
 import { projectCommerce } from "./commerce";
 import { db } from "../db/registry";
@@ -246,13 +246,22 @@ export function createHandler(): (request: Request) => Promise<Response> {
           ...(bodyJson.mode ? { mode: bodyJson.mode } : {}),
         });
         // Hydrate through the JIT app (auth-forwarded) — a hit the caller
-        // may not read simply drops out.
+        // may not read simply drops out. Localized fields resolve per
+        // ?locale exactly like plain reads (cms/localization.md §3).
+        const localizedFields = jit.localizedFields.get(plural) ?? [];
+        const searchLocale = url.searchParams.get("locale") ?? jit.locales?.default;
+        const chain =
+          localizedFields.length > 0 && jit.locales && searchLocale && searchLocale !== "all"
+            ? fallbackChain(searchLocale, jit.locales)
+            : null;
         const results: Json[] = [];
         for (const hit of hits) {
           const row = await jit.app.fetch(
             new Request(`${url.origin}/${plural}/${hit.id}`, { headers: request.headers }),
           );
-          if (row.ok) results.push({ ...(await row.json()), _score: hit.score });
+          if (!row.ok) continue;
+          const data = (await row.json()) as Record<string, unknown>;
+          results.push({ ...(chain ? localizeRow(data, localizedFields, chain) : data), _score: hit.score });
         }
         return corsify(Response.json({ results }));
       }

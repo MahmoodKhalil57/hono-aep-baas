@@ -690,6 +690,12 @@ describe("localized fields (cms/localization.md §3)", () => {
     // LIST resolves per row.
     const listed = (await (await fetch(url(`/v1/projects/${pid}/items?locale=ar`))).json()) as { results: { title: string }[] };
     expect(listed.results[0]!.title).toBe("تي شيرت كلاسيكي");
+    // SEARCH results resolve too (no raw locale maps on the wire).
+    const searched = (await (await fetch(url(`/v1/projects/${pid}/items:search?locale=ar`), { method: "POST", headers: json, body: JSON.stringify({ query: "كلاسيكي" }) })).json()) as { results: { title: unknown }[] };
+    if (searched.results.length > 0) expect(typeof searched.results[0]!.title).toBe("string");
+    const searchedDefault = (await (await fetch(url(`/v1/projects/${pid}/items:search`), { method: "POST", headers: json, body: JSON.stringify({ query: "Classic" }) })).json()) as { results: { title: unknown }[] };
+    expect(searchedDefault.results.length).toBeGreaterThan(0);
+    expect(searchedDefault.results[0]!.title).toBe("Classic Tee v2");
   }, 30_000);
 });
 
