@@ -94,16 +94,20 @@ frontend-only rule (there is no server to sneak logic into).
    keys) → build → `actions/deploy-pages`. The backend deploys with
    `sync push`; the frontend is just files.
 
-## 3. The automatic admin panel
+## 3. The automatic admin panel — IMPLEMENTED
 
-The generated admin is contract-driven React (hono-aep-ui) — it needs
-only `openapi.json` + a session/key. Two mountings, no new machinery:
+The generated admin is contract-driven React (hono-aep-ui AdminPages) —
+it needs only a per-project `openapi.json` + an AepUiClient. Two
+mountings, no new machinery:
 
 1. **The dashboard** hosts it for every project (the owner surface).
-2. **The consumer's SPA** MAY mount the same components at `/admin`
-   behind the project's auth pool — a white-label admin inside the
-   static app, restyled by the project's own theme through the base
-   contract.
+2. **The consumer's SPA** mounts the same AdminPages at `/admin` behind
+   the project's auth pool — a white-label admin inside the static app,
+   restyled by the project's own theme through the base contract. What
+   made it work: `AepUiConfig.docUrl` (point the admin at the project's
+   contract), the per-project `/v1/projects/{p}/openapi.json`, and an
+   AepUiClient that is a thin bearer-authed fetch mapping over the AEP
+   surface. The flagship's Account page links to it.
 
 ## 4. Phasing
 

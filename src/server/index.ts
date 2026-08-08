@@ -190,6 +190,20 @@ const server = Bun.serve({
       // where {plural} is not a compiled child → the project's declared
       // collections app (live the moment its document is applied).
       const segments = url.pathname.split("/"); // ["", "v1", "projects", p, seg, …]
+      // Per-project OpenAPI (site.md §5 / baas/collections.md §5): the
+      // JIT app's contract — the white-label admin reads THIS. Public so
+      // the static SPA can build its admin model.
+      if (segments[2] === "projects" && segments[3] && segments[4] === "openapi.json" && !segments[5]) {
+        const jit = await jitProjectApp(segments[3]);
+        if (!jit) return corsify(Response.json({ title: "No collections declared." }, { status: 404 }));
+        const doc = await openApiDocument(jit, {
+          title: `${segments[3]} (mizan-gpp)`,
+          version: "1.0.0",
+          description: "Per-project AEP contract — hosted collections.",
+          servers: [{ url: `${url.origin}/v1/projects/${segments[3]}` }],
+        });
+        return corsify(Response.json(doc));
+      }
       // END-USER auth pools (auth-pools.md): better-auth mounted per
       // project, bearer-first; basePath matches, so no path rewriting.
       if (segments[2] === "projects" && segments[3] && segments[4] === "auth") {

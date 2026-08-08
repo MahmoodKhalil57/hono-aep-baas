@@ -411,3 +411,29 @@ describe("hosted pages + blocks (site.md §1)", () => {
     ).toBe(400);
   }, 30_000);
 });
+
+describe("per-project OpenAPI (white-label admin source)", () => {
+  it("serves the JIT app's contract with the declared collection's paths", async () => {
+    const cookie = await signUp("apiuser");
+    const project = await makeProject(cookie, "Contracted");
+    await fetch(url(`/v1/${project}/collections/blog`), {
+      method: "PUT",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({
+        definition: {
+          singular: "post",
+          plural: "posts",
+          fields: [{ name: "title", type: "string", required: true }],
+        },
+      }),
+    });
+    const projectId = project.split("/")[1]!;
+    const doc = await fetch(url(`/v1/projects/${projectId}/openapi.json`), {
+      headers: { Origin: "https://someone.github.io" },
+    });
+    expect(doc.status).toBe(200);
+    expect(doc.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    const body = (await doc.json()) as { paths: Record<string, unknown> };
+    expect(Object.keys(body.paths)).toContain("/posts");
+  }, 30_000);
+});
