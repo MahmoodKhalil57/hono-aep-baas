@@ -437,3 +437,23 @@ describe("per-project OpenAPI (white-label admin source)", () => {
     expect(Object.keys(body.paths)).toContain("/posts");
   }, 30_000);
 });
+
+describe("inbound webhooks route (connections consumer)", () => {
+  it("routes POST /v1/projects/{p}/webhooks/{name} to the consumer", async () => {
+    const cookie = await signUp("hookuser");
+    const project = await makeProject(cookie, "Hooked");
+    const projectId = project.split("/")[1]!;
+    // The sample stripe connection ships DISABLED → the consumer reports
+    // no such inbound connection (404 problem), proving the route reaches
+    // it rather than falling through to the JIT/page 404 shell.
+    const response = await fetch(url(`/v1/projects/${projectId}/webhooks/stripe`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "https://hooks.stripe.com" },
+      body: "{}",
+    });
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Content-Type")).toContain("application/problem+json");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(((await response.json()) as { title: string }).title).toContain("inbound connection");
+  }, 30_000);
+});

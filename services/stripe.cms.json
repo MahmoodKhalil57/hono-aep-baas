@@ -1,0 +1,16 @@
+{
+  "config": {
+    "inbound": {
+      "job": {
+        "type": "stripe-event"
+      },
+      "secret": {
+        "$env": "STRIPE_WEBHOOK_SECRET"
+      }
+    }
+  },
+  "description": "Inbound Stripe webhook consumer (Standard Webhooks): verified events → the stripe-event job. Disabled until STRIPE_WEBHOOK_SECRET exists; received at POST /v1/projects/{p}/webhooks/stripe.",
+  "enabled": false,
+  "kind": "connections",
+  "provider": "local"
+}

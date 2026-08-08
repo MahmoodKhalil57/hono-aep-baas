@@ -6,7 +6,7 @@ import {
   registerNotificationsKind,
   type Notifications,
 } from "hono-aep-notifications";
-import { registerConnectionsKind } from "hono-aep-connections";
+import { createConnectionsConsumer, registerConnectionsKind, type ConnectionsConsumer } from "hono-aep-connections";
 import { composeSinks, type EventSink } from "hono-aep";
 import { keyPrincipal, type Principal } from "hono-aep-auth";
 import { db } from "../db/registry";
@@ -63,3 +63,9 @@ export async function principalFrom(c: import("hono").Context): Promise<Principa
 
 /** The resource-event sink shared by every app instance (jobs consumes). */
 export const eventSink: EventSink | null = jobs ? composeSinks(jobs.eventConsumer()) : null;
+
+/** The inbound webhook consumer over all connections instances (per project
+ *  instances are read at receive-time; this reads the app-level set). */
+export const connectionsConsumer: ConnectionsConsumer | null = jobs
+  ? createConnectionsConsumer({ instances, enqueue: jobs.enqueue, env: process.env })
+  : null;

@@ -10,7 +10,7 @@ import { drizzleAepStorage } from "hono-aep-drizzle";
 import { block, collection, form, page, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
 import { projectPool } from "./pools";
-import { authn, eventSink, jobs, notifications, principalFrom } from "./services";
+import { authn, connectionsConsumer, eventSink, jobs, notifications, principalFrom } from "./services";
 
 /**
  * mizan-gpp — forms-as-a-service (baas/spec/). The whole server: the AEP
@@ -190,6 +190,23 @@ const server = Bun.serve({
       // where {plural} is not a compiled child → the project's declared
       // collections app (live the moment its document is applied).
       const segments = url.pathname.split("/"); // ["", "v1", "projects", p, seg, …]
+      // Inbound webhooks (connections consumer): signed third-party
+      // events (Stripe, …) verified then handed to jobs — NEVER inline.
+      // Public by design; the SIGNATURE is the authentication.
+      if (
+        segments[2] === "projects" &&
+        segments[3] &&
+        segments[4] === "webhooks" &&
+        segments[5] &&
+        !segments[6] &&
+        request.method === "POST"
+      ) {
+        if (!connectionsConsumer) return corsify(Response.json({ title: "No jobs engine." }, { status: 503 }));
+        // The connection instance is named by the URL segment (app-level
+        // instances today; per-project inbound registration is the next
+        // step, mirroring collections/themes).
+        return corsify(await connectionsConsumer.receive(segments[5], request));
+      }
       // Per-project OpenAPI (site.md §5 / baas/collections.md §5): the
       // JIT app's contract — the white-label admin reads THIS. Public so
       // the static SPA can build its admin model.

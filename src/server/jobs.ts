@@ -10,6 +10,16 @@ export function createJobHandlers(deps: {
 }): Record<string, JobHandler> {
   return {
     /**
+     * Verified inbound Stripe events (connections consumer → jobs; never
+     * inline). The billing kind will own the object graph; today this
+     * records the event type so the pipeline is provable end to end.
+     */
+    "stripe-event": (ctx) => {
+      const webhook = (ctx.payload as { webhook?: { type?: string } }).webhook;
+      ctx.log(`stripe event: ${webhook?.type ?? "unknown"}`);
+      return { received: webhook?.type ?? null };
+    },
+    /**
      * Runs off `projects.*.forms.*.submissions.*.create`: announce the
      * submission to the form's notify address, and autorespond to the
      * submitter when `_replyto` was given (baas/forms.md §3). Spam-marked
