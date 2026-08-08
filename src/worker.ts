@@ -5,6 +5,9 @@ import { setInstances } from "./server/runtime-config";
 import type { ServiceInstance } from "hono-aep-cms";
 import servicesArtifact from "../dist/services.json";
 import { setEmbedder } from "./server/embed";
+import { setBlobs } from "./server/blobs";
+import { createStorage } from "unstorage";
+import r2Driver from "unstorage/drivers/cloudflare-r2-binding";
 
 /**
  * The Cloudflare Worker entry: install D1 into the drizzle seam and the
@@ -15,6 +18,7 @@ import { setEmbedder } from "./server/embed";
 type Env = {
   DB: unknown;
   AI?: { run: (model: string, input: { text: string[] }) => Promise<{ data: number[][] }> };
+  MEDIA?: unknown; // R2 bucket binding — media bytes (media.md)
   BETTER_AUTH_URL?: string;
 };
 
@@ -33,6 +37,9 @@ async function boot(env: Env): Promise<{
       const out = await env.AI!.run("@cf/baai/bge-m3", { text: [text] });
       return out.data[0]!;
     });
+  }
+  if (env.MEDIA) {
+    setBlobs(createStorage({ driver: r2Driver({ binding: env.MEDIA as never }) }));
   }
   const { createHandler } = await import("./server/app");
   const { jobs } = await import("./server/services");

@@ -225,6 +225,33 @@ export function createHandler(): (request: Request) => Promise<Response> {
       }
       // Commerce (baas/commerce.md): cart + checkout + track. Cart/checkout
       // need the end-user principal (owner); track is client analytics.
+      // Media (media.md, per-project): authenticated upload, public
+      // download + metadata reads, project-owner-only mutation. Bytes ride
+      // the blob seam (fs locally, R2 on Workers) under a project prefix.
+      if (
+        segments[2] === "projects" && segments[3] &&
+        (segments[4] === "media" || segments[4] === "media:upload")
+      ) {
+        const pid = segments[3];
+        const media = (await import("./media")).projectMedia(pid);
+        if (!media) return corsify(Response.json({ title: "Media is not enabled on this runtime." }, { status: 503 }));
+        const isUpload = segments[4] === "media:upload" && request.method === "POST";
+        const isRead = request.method === "GET" || request.method === "HEAD";
+        if (isUpload) {
+          const principal =
+            (await principalFrom({ req: { raw: request, header: (n: string) => request.headers.get(n) } } as never)) ??
+            (await (await import("./pools")).poolPrincipal(pid, request.headers));
+          if (!principal) return corsify(Response.json({ title: "Sign in to upload." }, { status: 401 }));
+        } else if (!isRead) {
+          const principal = await principalFrom({ req: { raw: request, header: (n: string) => request.headers.get(n) } } as never);
+          const projectRows = await db.select().from(projects).where(eq(projects.id, pid)).limit(1);
+          if (!principal || projectRows[0]?.created_by !== principal.userId) {
+            return corsify(Response.json({ title: "Only the project owner mutates media." }, { status: 403 }));
+          }
+        }
+        const stripped = `/${segments.slice(4).join("/")}`;
+        return corsify(await media.app.fetch(new Request(`${url.origin}${stripped}${url.search}`, request)));
+      }
       // Fulfillment (commerce.md §3.4): POST /commerce/orders/{id}:advance
       // {to, reason} — MERCHANT-policied: the project owner's builder
       // principal only (customers never move fulfillment state).

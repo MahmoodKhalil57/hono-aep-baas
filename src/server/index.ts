@@ -1,4 +1,7 @@
 import "../db"; // opens bun:sqlite and installs the drizzle seam
+import { createStorage } from "unstorage";
+import fsLiteDriver from "unstorage/drivers/fs-lite";
+import { setBlobs } from "./blobs";
 import { readServices } from "hono-aep-cms";
 import { setInstances } from "./runtime-config";
 
@@ -10,6 +13,7 @@ import { setInstances } from "./runtime-config";
  */
 const appRoot = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 setInstances(readServices(appRoot));
+setBlobs(createStorage({ driver: fsLiteDriver({ base: `${appRoot}/data/media` }) })); // media bytes (fs locally)
 
 const { createHandler } = await import("./app");
 const { jobs } = await import("./services");

@@ -530,6 +530,37 @@ describe("definition gate = the full serving pipeline (AEP-122 poison guard)", (
   }, 30_000);
 });
 
+describe("per-project media (media.md)", () => {
+  it("authenticated upload → public download; mutation is owner-only; delete removes the blob", async () => {
+    const cookie = await signUp("uploader");
+    const project = await makeProject(cookie, "Media");
+    const pid = project.split("/")[1]!;
+    await fetch(url(`/v1/${project}`), { method: "PATCH", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ auth_pool: {} }) });
+    // Anonymous upload is refused.
+    const anon = await fetch(url(`/v1/projects/${pid}/media:upload`), { method: "POST", body: new FormData() });
+    expect(anon.status).toBe(401);
+    // A pool END-USER uploads (multipart).
+    const tok = (await (await fetch(url(`/v1/${project}/auth/sign-up/email`), { method: "POST", headers: json, body: JSON.stringify({ email: `m-${Date.now()}@x.com`, password: "supersecret1", name: "M" }) })).headers.get("set-auth-token"))!;
+    const form = new FormData();
+    form.append("file", new File(["avatar-bytes-here"], "avatar.png", { type: "image/png" }));
+    const uploaded = await fetch(url(`/v1/projects/${pid}/media:upload`), { method: "POST", headers: { Authorization: `Bearer ${tok}` }, body: form });
+    expect(uploaded.status).toBe(201);
+    const { results } = (await uploaded.json()) as { results: { path: string; content_type: string; size_bytes: number }[] };
+    const id = results[0]!.path.split("/")[1]!;
+    expect(results[0]!.content_type).toBe("image/png");
+    // Public download streams the exact bytes with the stored type.
+    const download = await fetch(url(`/v1/projects/${pid}/media/${id}:download`));
+    expect(download.status).toBe(200);
+    expect(download.headers.get("Content-Type")).toBe("image/png");
+    expect(await download.text()).toBe("avatar-bytes-here");
+    // Mutation: the uploader (pool user) may NOT delete; the project owner may.
+    expect((await fetch(url(`/v1/projects/${pid}/media/${id}`), { method: "DELETE", headers: { Authorization: `Bearer ${tok}` } })).status).toBe(403);
+    expect((await fetch(url(`/v1/projects/${pid}/media/${id}`), { method: "DELETE", headers: { Cookie: cookie } })).status).toBe(204);
+    // The blob went with the row (afterDelete).
+    expect((await fetch(url(`/v1/projects/${pid}/media/${id}:download`))).status).toBe(404);
+  }, 30_000);
+});
+
 describe("discounts + fulfillment over hosted collections (commerce.md §3.4-3.5)", () => {
   it("merchant declares a coupon row; checkout applies it; owner advances fulfillment", async () => {
     const cookie = await signUp("shopkeeper");
