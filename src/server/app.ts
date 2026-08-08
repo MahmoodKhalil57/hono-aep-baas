@@ -13,6 +13,7 @@ import { forms, projects, tables, themes } from "../db/schema";
 import { drizzleAepStorage } from "hono-aep-drizzle";
 import { block, collection, form, page, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
+import { studioHtml } from "./studio-page";
 import { projectPool } from "./pools";
 import { authn, billing, connectionsConsumer, eventSink, flags, gateway, jobs, notifications, principalFrom, search } from "./services";
 
@@ -152,6 +153,7 @@ export function createHandler(): (request: Request) => Promise<Response> {
     "/": () =>
       Response.json({
         name: "mizan-gpp",
+        studio: "/studio",
         docs: "/v1/openapi.json",
         mcp: "/v1/mcp",
         health: "/healthz",
@@ -751,6 +753,11 @@ export function createHandler(): (request: Request) => Promise<Response> {
       if (request.method === "POST") return corsify(await submit(request, decodeURIComponent(submitMatch[1]!)));
     }
     if (path === "/") return routes["/"]();
+    // The hosted DEVELOPER studio (product §1b's "website" writer) —
+    // same-origin, so builder cookies just work.
+    if (path === "/studio") {
+      return new Response(studioHtml, { headers: { "Content-Type": "text/html;charset=utf-8" } });
+    }
     if (path === "/api/auth/*".replace("*", "") || path.startsWith("/api/auth/")) return routes["/api/auth/*"](request);
     if (path === "/v1/keys:mint") return routes["/v1/keys:mint"].POST(request);
     if (path === "/v1/openapi.json") return routes["/v1/openapi.json"]();

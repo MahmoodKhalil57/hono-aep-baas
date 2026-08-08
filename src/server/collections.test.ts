@@ -61,6 +61,17 @@ const BLOG_DEFINITION = {
   // list/get stay public — a blog IS public content.
 };
 
+describe("hosted developer studio (/studio)", () => {
+  it("serves the same-origin console", async () => {
+    const response = await fetch(url("/studio"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("text/html");
+    const html = await response.text();
+    expect(html).toContain("Developer studio");
+    expect(html).toContain("/api/auth/sign-"); // cookie auth, same origin
+  });
+});
+
 describe("hosted collections (JIT)", () => {
   it("apply a definition → the resource is live: CRUD, policy, transition, filter", async () => {
     const cookie = await signUp("author");
