@@ -530,6 +530,49 @@ describe("definition gate = the full serving pipeline (AEP-122 poison guard)", (
   }, 30_000);
 });
 
+describe("discounts + fulfillment over hosted collections (commerce.md §3.4-3.5)", () => {
+  it("merchant declares a coupon row; checkout applies it; owner advances fulfillment", async () => {
+    const cookie = await signUp("shopkeeper");
+    const project = await makeProject(cookie, "Coupons");
+    const pid = project.split("/")[1]!;
+    await fetch(url(`/v1/${project}`), { method: "PATCH", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ auth_pool: {} }) });
+    // catalog + coupon as hosted collections (config, not code)
+    await fetch(url(`/v1/${project}/collections/catalog`), {
+      method: "PUT", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ definition: { singular: "product", plural: "products", fields: [{ name: "name", type: "string", required: true }, { name: "price_cents", type: "number", integer: true }], policy_create: "authenticated", policy_get: "public", policy_list: "public" } }),
+    });
+    await fetch(url(`/v1/${project}/collections/discounts`), {
+      method: "PUT", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ definition: { singular: "discount", plural: "discounts", fields: [{ name: "kind", type: "string", required: true, enum_values: ["percent", "fixed"] }, { name: "value", type: "number", integer: true, required: true }, { name: "min_cents", type: "number", integer: true }, { name: "used", type: "number", integer: true }], policy_create: "authenticated", policy_get: "public", policy_list: "public" } }),
+    });
+    await fetch(url(`/v1/${project}/products?id=kit`), { method: "POST", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ name: "Kit", price_cents: 3000 }) });
+    await fetch(url(`/v1/${project}/discounts?id=SAVE20`), { method: "POST", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ kind: "percent", value: 20, min_cents: 1000 }) });
+    // pool customer: cart → validate → discounted checkout (local billing pays instantly)
+    const tok = (await (await fetch(url(`/v1/${project}/auth/sign-up/email`), { method: "POST", headers: json, body: JSON.stringify({ email: `c-${Date.now()}@x.com`, password: "supersecret1", name: "C" }) })).headers.get("set-auth-token"))!;
+    await fetch(url(`/v1/projects/${pid}/commerce/cart:add`), { method: "POST", headers: { ...json, Authorization: `Bearer ${tok}` }, body: JSON.stringify({ variant: "kit" }) });
+    const verdict = (await (await fetch(url(`/v1/projects/${pid}/commerce/discount:validate`), { method: "POST", headers: { ...json, Authorization: `Bearer ${tok}` }, body: JSON.stringify({ code: "SAVE20" }) })).json()) as { ok: boolean; discount_cents: number };
+    expect(verdict).toMatchObject({ ok: true, discount_cents: 600 });
+    const co = (await (await fetch(url(`/v1/projects/${pid}/commerce/cart:checkout`), { method: "POST", headers: { ...json, Authorization: `Bearer ${tok}` }, body: JSON.stringify({ discount: "SAVE20" }) })).json()) as { order: { id: string; status: string; total_cents: number; discount?: { code: string } } };
+    expect(co.order.status).toBe("paid");
+    expect(co.order.total_cents).toBe(2400);
+    expect(co.order.discount).toMatchObject({ code: "SAVE20" });
+    // used counter incremented on the SAME paid transition
+    const row = (await (await fetch(url(`/v1/projects/${pid}/discounts/SAVE20`))).json()) as { used: number };
+    expect(row.used).toBe(1);
+    // fulfillment: the customer may NOT advance; the owner walks the machine
+    const denied = await fetch(url(`/v1/projects/${pid}/commerce/orders/${co.order.id}:advance`), { method: "POST", headers: { ...json, Authorization: `Bearer ${tok}` }, body: JSON.stringify({ to: "fulfilled" }) });
+    expect(denied.status).toBe(403);
+    for (const to of ["fulfilled", "shipped", "delivered"]) {
+      const r = await fetch(url(`/v1/projects/${pid}/commerce/orders/${co.order.id}:advance`), { method: "POST", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ to }) });
+      expect(r.status).toBe(200);
+      expect(((await r.json()) as { status: string }).status).toBe(to);
+    }
+    // and an illegal jump is a clean 422
+    const bad = await fetch(url(`/v1/projects/${pid}/commerce/orders/${co.order.id}:advance`), { method: "POST", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ to: "cancelled" }) });
+    expect(bad.status).toBe(422);
+  }, 30_000);
+});
+
 describe("localized fields (cms/localization.md §3)", () => {
   it("flat writes merge per locale; reads resolve via the fallback chain; locale=all returns maps", async () => {
     const cookie = await signUp("localizer");

@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { createCommerce, type Commerce, type VariantLookup } from "hono-aep-commerce";
+import { createCommerce, type Commerce, type DiscountDef, type DiscountLookup, type VariantLookup } from "hono-aep-commerce";
 import { jsonRows } from "hono-aep-drizzle";
 import type { EventEnvelope, Json } from "hono-aep";
 import { db } from "../db/registry";
@@ -67,7 +67,36 @@ export function projectCommerce(projectId: string): Commerce {
     }
   };
 
-  const commerce = createCommerce({ db, variant, onEvent });
+  // Coupons live in the project's `discounts` hosted collection (singular
+  // "discount"), same pattern as the variant lookup; the used-counter
+  // write-back is data-plane maintenance on the row's JSON.
+  const discount: DiscountLookup = async (code) => {
+    const rows = (await cdb
+      .select()
+      .from(jsonRows)
+      .where(and(eq(col.scope, scope), eq(col.collection, "discount"), eq(col.id, code)))
+      .limit(1)) as (typeof jsonRows.$inferSelect)[];
+    if (!rows[0]) return null;
+    const d = rows[0].data as Omit<DiscountDef, "code">;
+    return { ...d, code };
+  };
+  const onDiscountUsed = async (code: string): Promise<void> => {
+    const rows = (await cdb
+      .select()
+      .from(jsonRows)
+      .where(and(eq(col.scope, scope), eq(col.collection, "discount"), eq(col.id, code)))
+      .limit(1)) as (typeof jsonRows.$inferSelect)[];
+    if (!rows[0]) return;
+    const data = { ...(rows[0].data as Record<string, unknown>) };
+    data["used"] = Number(data["used"] ?? 0) + 1;
+    const udb = db as unknown as { update(t: unknown): { set(v: unknown): { where(w: unknown): Promise<unknown> } } };
+    await udb
+      .update(jsonRows)
+      .set({ data, updateTime: new Date().toISOString() })
+      .where(and(eq(col.scope, scope), eq(col.collection, "discount"), eq(col.id, code)));
+  };
+
+  const commerce = createCommerce({ db, variant, discount, onEvent, onDiscountUsed });
   cache.set(projectId, commerce);
   return commerce;
 }

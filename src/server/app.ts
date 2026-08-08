@@ -9,7 +9,7 @@ import { parseThemeCss, renderThemeCss } from "hono-aep-cms";
 import { contextOf } from "hono-aep-flags";
 import { projectCommerce } from "./commerce";
 import { db } from "../db/registry";
-import { forms, tables, themes } from "../db/schema";
+import { forms, projects, tables, themes } from "../db/schema";
 import { drizzleAepStorage } from "hono-aep-drizzle";
 import { block, collection, form, page, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
@@ -225,6 +225,36 @@ export function createHandler(): (request: Request) => Promise<Response> {
       }
       // Commerce (baas/commerce.md): cart + checkout + track. Cart/checkout
       // need the end-user principal (owner); track is client analytics.
+      // Fulfillment (commerce.md §3.4): POST /commerce/orders/{id}:advance
+      // {to, reason} — MERCHANT-policied: the project owner's builder
+      // principal only (customers never move fulfillment state).
+      if (
+        segments[2] === "projects" && segments[3] && segments[4] === "commerce" &&
+        segments[5] === "orders" && segments[6]?.includes(":") && request.method === "POST"
+      ) {
+        const pid = segments[3];
+        const [orderId, verb] = segments[6].split(":") as [string, string];
+        if (verb !== "advance") return corsify(Response.json({ title: "Unknown verb." }, { status: 404 }));
+        const principal =
+          (await principalFrom({ req: { raw: request, header: (n: string) => request.headers.get(n) } } as never)) ??
+          (await (await import("./pools")).poolPrincipal(pid, request.headers));
+        if (!principal) return corsify(Response.json({ title: "Sign in." }, { status: 401 }));
+        const projectRows = await db.select().from(projects).where(eq(projects.id, pid)).limit(1);
+        if (projectRows[0]?.created_by !== principal.userId) {
+          // Authenticated (builder or pool customer) but not the merchant.
+          return corsify(Response.json({ title: "Only the project owner advances fulfillment." }, { status: 403 }));
+        }
+        const b = (await request.json().catch(() => ({}))) as { to?: string; reason?: string };
+        try {
+          const r = await projectCommerce(pid).advance({
+            orderId, to: b.to as "fulfilled" | "shipped" | "delivered" | "cancelled",
+            ...(b.reason ? { reason: b.reason } : {}),
+          });
+          return corsify(Response.json(r.order));
+        } catch (problem) {
+          return corsify(Response.json({ title: (problem as Error).message }, { status: 422 }));
+        }
+      }
       if (segments[2] === "projects" && segments[3] && segments[4] === "commerce" && segments[5] && !segments[6]) {
         const pid = segments[3];
         const commerce = projectCommerce(pid);
@@ -253,8 +283,22 @@ export function createHandler(): (request: Request) => Promise<Response> {
           const r = await commerce.removeItem({ scope: `projects/${pid}`, customer, variant: String(b.variant) });
           return corsify(Response.json(r.cart));
         }
+        if (segments[5] === "discount:validate" && request.method === "POST") {
+          const b = (await request.json().catch(() => ({}))) as { code?: string };
+          const verdict = await commerce.validateDiscount({ scope: `projects/${pid}`, customer, code: String(b.code ?? "") });
+          return corsify(Response.json(verdict, { status: verdict.ok ? 200 : 422 }));
+        }
         if (segments[5] === "cart:checkout" && request.method === "POST") {
-          const { order } = await commerce.checkout({ scope: `projects/${pid}`, customer });
+          const co = (await request.json().catch(() => ({}))) as { discount?: string };
+          let order: Awaited<ReturnType<typeof commerce.checkout>>["order"];
+          try {
+            ({ order } = await commerce.checkout({
+              scope: `projects/${pid}`, customer, ...(co.discount ? { discountCode: co.discount } : {}),
+            }));
+          } catch (problem) {
+            // Empty cart / rejected coupon are client errors, not 500s.
+            return corsify(Response.json({ title: (problem as Error).message }, { status: 422 }));
+          }
           // Bridge to billing (commerce.md §3): charge the order TOTAL (an
           // ad-hoc amount — an order snapshots its own price, it is not a
           // catalog product). local self-serve settles instantly, so we fire
