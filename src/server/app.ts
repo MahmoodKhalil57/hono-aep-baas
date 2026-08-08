@@ -489,6 +489,27 @@ export function createHandler(): (request: Request) => Promise<Response> {
         });
         return corsify(Response.json(result));
       }
+      // Developer keys for END-USERS (keys.md's TODO(saastarter) branch):
+      // a pool customer mints an sk_ key bound to THEIR principal — the
+      // key then acts exactly as their session does (orders, wishlist,
+      // commerce) through keyPrincipal. The global /v1/keys:mint stays
+      // builder-only (sync keys).
+      if (
+        segments[2] === "projects" && segments[3] && segments[4] === "keys:mint" &&
+        !segments[5] && request.method === "POST"
+      ) {
+        const principal =
+          (await principalFrom({ req: { raw: request, header: (n: string) => request.headers.get(n) } } as never)) ??
+          (await (await import("./pools")).poolPrincipal(segments[3], request.headers));
+        if (!principal) return corsify(Response.json({ title: "Sign in to mint a key." }, { status: 401 }));
+        const minted = await createApiKey(db, {
+          class: "secret",
+          name: "developer",
+          userId: principal.userId,
+          scopes: ["*"],
+        });
+        return corsify(Response.json({ plaintext: minted.plaintext, display: minted.display }));
+      }
       // Billing portal (manage payment method / cancel subscription): the
       // principal's customer mapping was recorded from a verified webhook;
       // no mapping → 404 (nothing to manage yet).

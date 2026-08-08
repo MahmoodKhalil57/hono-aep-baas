@@ -571,6 +571,17 @@ describe("guest checkout + link upgrade (commerce.md §3a)", () => {
     expect(orders.orders[0]!.status).toBe("paid");
     const wish = (await (await fetch(url(`/v1/projects/${pid}/wishlist`), { headers: { Authorization: `Bearer ${account}` } })).json()) as { results: unknown[] };
     expect(wish.results).toHaveLength(1); // so did the wishlist
+
+    // Developer key (keys.md TODO(saastarter)): a POOL user mints an sk_
+    // key bound to their principal; the key acts as their session does.
+    const minted = await fetch(url(`/v1/projects/${pid}/keys:mint`), { method: "POST", headers: { ...json, Authorization: `Bearer ${account}` }, body: "{}" });
+    expect(minted.status).toBe(200);
+    const { plaintext } = (await minted.json()) as { plaintext: string };
+    expect(plaintext).toMatch(/^sk_/);
+    const viaKey = (await (await fetch(url(`/v1/projects/${pid}/commerce/orders`), { headers: { Authorization: `Bearer ${plaintext}` } })).json()) as { orders: unknown[] };
+    expect(viaKey.orders).toHaveLength(1); // the key sees THEIR orders
+    // anonymous mint refused
+    expect((await fetch(url(`/v1/projects/${pid}/keys:mint`), { method: "POST", headers: json, body: "{}" })).status).toBe(401);
   }, 30_000);
 });
 
