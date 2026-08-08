@@ -150,6 +150,7 @@ const RESERVED_PLURALS = new Set([
   "submissions",
   "collections",
   "media",
+  "deliveries",
   "themes",
   "pages",
   "blocks",

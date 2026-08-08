@@ -55,7 +55,21 @@ export function projectCommerce(projectId: string): Commerce {
             .catch(() => ({ granted: [] }));
         }
       }
-      // (2) The confirmation email (notifications kind).
+      // (2) Virtual delivery (delivery.md §3): items whose product carries
+      //     a `file` deliver themselves the moment the money is real.
+      const { projectDelivery, productFile } = await import("./delivery");
+      const deliverable: { product_id: string; name?: string; quantity: number; file?: string }[] = [];
+      for (const item of products) {
+        if (!item.product_id) continue;
+        const file = await productFile(projectId, item.product_id);
+        if (file) deliverable.push({ product_id: item.product_id, ...(item.name ? { name: item.name } : {}), quantity: item.quantity ?? 1, file });
+      }
+      if (deliverable.length > 0 && d.order_id) {
+        await projectDelivery(projectId)
+          .create({ scope, orderId: d.order_id, items: deliverable, method: "download", metadata: {} })
+          .catch((problem) => console.error("auto-delivery failed:", problem));
+      }
+      // (3) The confirmation email (notifications kind).
       if (notifications) {
         const lines = products.map((i) => `${i.quantity}× ${i.name ?? "item"}`).join(", ");
         await notifications.notify({

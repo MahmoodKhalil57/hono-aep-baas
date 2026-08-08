@@ -267,6 +267,41 @@ export function createHandler(): (request: Request) => Promise<Response> {
       }
       // Commerce (baas/commerce.md): cart + checkout + track. Cart/checkout
       // need the end-user principal (owner); track is client analytics.
+      // Delivery claim (delivery.md §4): the ONLY door to delivered bytes —
+      // the order's customer principal, or a signed expiring token. Streams
+      // the item's file through the media surface; a canceled delivery is a
+      // dead claim on both paths.
+      if (
+        segments[2] === "projects" && segments[3] && segments[4] === "deliveries" &&
+        segments[5]?.endsWith(":claim") && request.method === "GET"
+      ) {
+        const pid = segments[3];
+        const deliveryId = segments[5].slice(0, -":claim".length);
+        const item = Number(url.searchParams.get("item") ?? "0");
+        const { projectDelivery } = await import("./delivery");
+        const deliveries = projectDelivery(pid);
+        const found = await deliveries.get(deliveryId);
+        if (!found || found.status === "canceled" || found.status === "failed") {
+          return corsify(Response.json({ title: "No claimable delivery." }, { status: 404 }));
+        }
+        const token = url.searchParams.get("token");
+        let admitted = token ? await deliveries.verifyClaimToken(deliveryId, item, token) : false;
+        if (!admitted) {
+          const principal =
+            (await principalFrom({ req: { raw: request, header: (n: string) => request.headers.get(n) } } as never)) ??
+            (await (await import("./pools")).poolPrincipal(pid, request.headers));
+          if (principal) {
+            const order = await projectCommerce(pid).getOrder(found.orderId);
+            admitted = order?.customer === principal.userId;
+          }
+        }
+        if (!admitted) return corsify(Response.json({ title: "This delivery is not yours to claim." }, { status: 403 }));
+        const file = found.items[item]?.file;
+        if (!file) return corsify(Response.json({ title: "No file on this item." }, { status: 404 }));
+        const media = (await import("./media")).projectMedia(pid);
+        if (!media) return corsify(Response.json({ title: "Media is not enabled." }, { status: 503 }));
+        return corsify(await media.app.fetch(new Request(`${url.origin}/media/${file}:download`)));
+      }
       // Media (media.md, per-project): authenticated upload, public
       // download + metadata reads, project-owner-only mutation. Bytes ride
       // the blob seam (fs locally, R2 on Workers) under a project prefix.
@@ -380,8 +415,26 @@ export function createHandler(): (request: Request) => Promise<Response> {
         const customer = principal.userId;
         if (segments[5] === "cart" && request.method === "GET")
           return corsify(Response.json(await commerce.getCart({ scope: `projects/${pid}`, customer })));
-        if (segments[5] === "orders" && request.method === "GET")
-          return corsify(Response.json({ orders: await commerce.orders({ scope: `projects/${pid}`, customer }) }));
+        if (segments[5] === "orders" && request.method === "GET") {
+          const orders = await commerce.orders({ scope: `projects/${pid}`, customer });
+          // Deliveries ride along (delivery.md §3): download artifacts get a
+          // fresh signed token so plain <a href> works from the storefront.
+          const { projectDelivery } = await import("./delivery");
+          const deliveries = projectDelivery(pid);
+          const decorated = await Promise.all(orders.map(async (order) => {
+            const rows = await deliveries.listByOrder({ scope: `projects/${pid}`, orderId: order.id });
+            const withTokens = await Promise.all(rows.map(async (row) => ({
+              ...row,
+              artifacts: await Promise.all(row.artifacts.map(async (artifact, at) =>
+                artifact.kind === "download"
+                  ? { ...artifact, claim: `${artifact.claim}&token=${await deliveries.claimToken(row.id, at)}` }
+                  : artifact,
+              )),
+            })));
+            return { ...order, deliveries: withTokens };
+          }));
+          return corsify(Response.json({ orders: decorated }));
+        }
         if (segments[5] === "cart:add" && request.method === "POST") {
           const b = (await request.json().catch(() => ({}))) as { variant?: string; quantity?: number };
           const r = await commerce.addItem({ scope: `projects/${pid}`, customer, variant: String(b.variant), quantity: b.quantity ?? 1 });

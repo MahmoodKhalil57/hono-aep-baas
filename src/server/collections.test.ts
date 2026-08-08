@@ -585,6 +585,54 @@ describe("guest checkout + link upgrade (commerce.md §3a)", () => {
   }, 30_000);
 });
 
+describe("virtual delivery (delivery.md): paid order → auto-download → claim", () => {
+  it("a product with a file delivers itself; claim admits owner + token; strangers 403", async () => {
+    const cookie = await signUp("digitalmerchant");
+    const project = await makeProject(cookie, "Digital");
+    const pid = project.split("/")[1]!;
+    await fetch(url(`/v1/${project}`), { method: "PATCH", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ auth_pool: {} }) });
+    await fetch(url(`/v1/${project}/collections/catalog`), {
+      method: "PUT", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ definition: { singular: "product", plural: "products", fields: [{ name: "name", type: "string", required: true }, { name: "price_cents", type: "number", integer: true }, { name: "file", type: "string" }], policy_create: "authenticated", policy_get: "public", policy_list: "public" } }),
+    });
+    // Upload the deliverable, attach it to the product.
+    const form = new FormData();
+    form.append("file", new File(["THE-PRODUCT-BYTES"], "product.zip", { type: "application/zip" }));
+    const uploaded = await fetch(url(`/v1/projects/${pid}/media:upload`), { method: "POST", headers: { Cookie: cookie }, body: form });
+    const mediaId = ((await uploaded.json()) as { results: { path: string }[] }).results[0]!.path.split("/")[1]!;
+    await fetch(url(`/v1/${project}/products?id=zip`), { method: "POST", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ name: "The Zip", price_cents: 500, file: mediaId }) });
+
+    // Buyer: cart → checkout (local billing pays instantly) → AUTO delivery.
+    const tok = (await (await fetch(url(`/v1/${project}/auth/sign-up/email`), { method: "POST", headers: json, body: JSON.stringify({ email: `dl-${Date.now()}@x.com`, password: "supersecret1", name: "DL" }) })).headers.get("set-auth-token"))!;
+    await fetch(url(`/v1/projects/${pid}/commerce/cart:add`), { method: "POST", headers: { ...json, Authorization: `Bearer ${tok}` }, body: JSON.stringify({ variant: "zip" }) });
+    const co = (await (await fetch(url(`/v1/projects/${pid}/commerce/cart:checkout`), { method: "POST", headers: { ...json, Authorization: `Bearer ${tok}` }, body: "{}" })).json()) as { order: { id: string; status: string } };
+    expect(co.order.status).toBe("paid");
+
+    // Orders carry the delivery with a TOKENED download artifact (§3);
+    // the delivered virtual delivery walked the ORDER machine to delivered.
+    const orders = (await (await fetch(url(`/v1/projects/${pid}/commerce/orders`), { headers: { Authorization: `Bearer ${tok}` } })).json()) as {
+      orders: { status: string; deliveries: { status: string; artifacts: { kind: string; claim?: string }[] }[] }[];
+    };
+    expect(orders.orders[0]!.status).toBe("delivered");
+    const deliveryRow = orders.orders[0]!.deliveries[0]!;
+    expect(deliveryRow.status).toBe("delivered");
+    const artifact = deliveryRow.artifacts.find((a) => a.kind === "download")!;
+    expect(artifact.claim).toContain("token=");
+
+    // Claim door 1: the signed token alone (no auth header) → the bytes.
+    const viaToken = await fetch(url(`/v1${artifact.claim!.startsWith("/v1") ? artifact.claim!.slice(3) : artifact.claim!}`));
+    expect(viaToken.status).toBe(200);
+    expect(await viaToken.text()).toBe("THE-PRODUCT-BYTES");
+    // Claim door 2: the owner's session, no token.
+    const bare = artifact.claim!.split("&token=")[0]!;
+    const viaOwner = await fetch(url(`/v1${bare.startsWith("/v1") ? bare.slice(3) : bare}`), { headers: { Authorization: `Bearer ${tok}` } });
+    expect(viaOwner.status).toBe(200);
+    // A stranger with neither → 403.
+    const stranger = (await (await fetch(url(`/v1/${project}/auth/sign-up/email`), { method: "POST", headers: json, body: JSON.stringify({ email: `str-${Date.now()}@x.com`, password: "supersecret1", name: "S" }) })).headers.get("set-auth-token"))!;
+    expect((await fetch(url(`/v1${bare.startsWith("/v1") ? bare.slice(3) : bare}`), { headers: { Authorization: `Bearer ${stranger}` } })).status).toBe(403);
+  }, 30_000);
+});
+
 describe("localized page variants (cms/localization.md §2)", () => {
   it("pages/{slug}?locale resolves slug@locale through the chain; base is terminal", async () => {
     const cookie = await signUp("pagewright");

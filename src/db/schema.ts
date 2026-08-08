@@ -21,6 +21,7 @@ export { searchDocument } from "hono-aep-search";
 import { searchTables } from "hono-aep-search";
 export { cart, order } from "hono-aep-commerce";
 import { commerceTables } from "hono-aep-commerce";
+import { deliveryTables } from "hono-aep-delivery";
 
 export const tables = {
   ...generatedTables,
@@ -30,6 +31,7 @@ export const tables = {
   ...billingTables,
   ...searchTables,
   ...commerceTables,
+  ...deliveryTables,
   ...apiKeyTables,
   ...poolTables,
   ...authTables,
