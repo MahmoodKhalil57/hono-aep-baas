@@ -64,7 +64,7 @@ const probes = createHealthProbes({
  */
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Expose-Headers": "ETag, X-Request-Id, set-auth-token",
+  "Access-Control-Expose-Headers": "ETag, X-Request-Id, set-auth-token, set-two-factor-token",
 } as const;
 
 const preflight = (): Response =>
@@ -73,7 +73,7 @@ const preflight = (): Response =>
     headers: {
       ...CORS_HEADERS,
       "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Authorization, Content-Type, If-Match, X-Request-Id",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type, If-Match, X-Request-Id, two-factor-token",
       "Access-Control-Max-Age": "86400",
     },
   });
