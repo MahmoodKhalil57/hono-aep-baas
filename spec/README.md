@@ -106,6 +106,7 @@ a `TODO(baas)` marker at their definition site in the suite specs
 | Plan gating | flags kind | 3 |
 | Submission search | search kind (CEL filters suffice until then) | 3 |
 | Hosted collections (baas/collections.md — THE flagship) | developer meta-API multi-tenant + field branches | 3 |
+| Commerce (products/cart/order + event taxonomy) | baas/commerce.md — composes collections/billing/notifications/search/connections | 3 |
 | End-user auth pools (baas/auth-pools.md) | authn kind per project | 3 |
 | Payments (customer link, intents, inbound webhooks) | billing kind + connections inbound | 3 |
 | Key delegation/limits/expiry (keys.md §2a) | authn apiKeys extensions | 3 |
@@ -135,7 +136,7 @@ in that project's spec, never in the marker.
 
 - baas/forms.md, baas/keys.md, baas/quotas.md, baas/agents.md,
   baas/counters.md, baas/sync.md, baas/collections.md, baas/auth-pools.md,
-  baas/site.md
+  baas/site.md, baas/commerce.md
 - Flagship consumer: the saastarter port (packages/saastarter surveyed;
   richPetShop2 remains the minimal example)
 - Suite umbrella (`customPackages/spec/README.md`) §2 laws, §3a register
