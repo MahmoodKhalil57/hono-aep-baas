@@ -404,9 +404,10 @@ export function createHandler(): (request: Request) => Promise<Response> {
         const jit = await jitProjectApp(segments[3]);
         if (jit) {
           const stripped = `/${segments.slice(4).join("/")}`;
-          return corsify(
-            await jit.app.fetch(new Request(`${url.origin}${stripped}${url.search}`, request)),
-          );
+          // The locale layer (cms/localization.md §3) wraps every JIT
+          // request — no-op for collections without localized fields.
+          const { localizedJitFetch } = await import("./localize");
+          return corsify(await localizedJitFetch(jit, request, url, stripped));
         }
       }
       return corsify(

@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 import { aepApp, defineResource, type EventEnvelope, type Json } from "hono-aep";
-import { composable, resourceFromDocument } from "hono-aep-cms";
+import { composable, localizationConfigSchema, resourceFromDocument, type LocalizationConfig } from "hono-aep-cms";
 import { jsonRowsStorage } from "hono-aep-drizzle";
 import { db } from "../db/registry";
-import { collections } from "../db/schema";
+import { collections, projects } from "../db/schema";
 import { eventSink, principalFrom } from "./services";
 import { poolPrincipal } from "./pools";
 import { search } from "./services";
@@ -19,7 +19,7 @@ import { extractText } from "hono-aep-search";
  * grammar: `projects.<p>.<plural>.<id>.<verb>`.
  */
 
-const cache = new Map<string, ReturnType<typeof aepApp> | null>();
+const cache = new Map<string, JitProject | null>();
 
 export const invalidateProject = (projectId: string): void => {
   cache.delete(projectId);
@@ -50,7 +50,7 @@ const projectSink = (projectId: string) => {
 
 export async function jitProjectApp(
   projectId: string,
-): Promise<ReturnType<typeof aepApp> | null> {
+): Promise<JitProject | null> {
   const cached = cache.get(projectId);
   if (cached !== undefined) return cached;
 
@@ -91,9 +91,33 @@ export async function jitProjectApp(
     },
     ...(sink ? { onEvent: sink } : {}),
   });
-  cache.set(projectId, app);
-  return app;
+
+  // Localization metadata (cms/localization.md): which fields of which
+  // plural are locale maps, plus the project's site.locales config — the
+  // dispatcher's localize layer consumes both. Cached with the app;
+  // collection AND project writes invalidate.
+  const localizedFields = new Map<string, string[]>();
+  for (const doc of docs) {
+    const definition = doc.definition as { plural?: string; fields?: { name: string; localized?: boolean }[] };
+    const names = (definition.fields ?? []).filter((field) => field.localized === true).map((field) => field.name);
+    if (definition.plural && names.length > 0) localizedFields.set(definition.plural, names);
+  }
+  const projectRows = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+  const site = projectRows[0]?.site as { locales?: unknown } | null;
+  const parsedLocales = localizationConfigSchema.safeParse(site?.locales);
+  const enriched: JitProject = {
+    ...app,
+    localizedFields,
+    locales: parsedLocales.success ? parsedLocales.data : null,
+  };
+  cache.set(projectId, enriched);
+  return enriched;
 }
+
+export type JitProject = ReturnType<typeof aepApp> & {
+  localizedFields: Map<string, string[]>;
+  locales: LocalizationConfig | null;
+};
 
 /** Compiled child plurals the dispatcher must never intercept. */
 export const COMPILED_CHILD_PLURALS = new Set(["forms", "collections", "themes", "pages", "blocks", "auth", "openapi.json"]);

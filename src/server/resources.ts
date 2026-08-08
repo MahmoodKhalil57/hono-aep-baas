@@ -32,8 +32,11 @@ const forbidden = (detail: string): AepProblem =>
     detail,
   });
 
-/* Project writes can change auth_pool — drop the pool cache. */
-const projectAfter = ({ id }: { id: string }) => invalidatePool(id);
+/* Project writes can change auth_pool AND site.locales — drop both caches. */
+const projectAfter = ({ id }: { id: string }): void => {
+  invalidatePool(id);
+  invalidateProject(id);
+};
 
 /** `projects/{project}` — the tenancy root; created_by stamped server-side. */
 export const project = defineResource({

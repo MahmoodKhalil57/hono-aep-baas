@@ -530,6 +530,63 @@ describe("definition gate = the full serving pipeline (AEP-122 poison guard)", (
   }, 30_000);
 });
 
+describe("localized fields (cms/localization.md §3)", () => {
+  it("flat writes merge per locale; reads resolve via the fallback chain; locale=all returns maps", async () => {
+    const cookie = await signUp("localizer");
+    const project = await makeProject(cookie, "Localized");
+    const pid = project.split("/")[1]!;
+    // site.locales on the project (§1) + a collection with a localized field.
+    await fetch(url(`/v1/${project}`), {
+      method: "PATCH", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ site: { locales: { default: "en", supported: ["en", "ar"], fallback: {} } } }),
+    });
+    await fetch(url(`/v1/${project}/collections/items`), {
+      method: "PUT", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ definition: {
+        singular: "item", plural: "items",
+        fields: [
+          { name: "title", type: "string", required: true, localized: true },
+          { name: "price", type: "number", integer: true },
+        ],
+        policy_create: "authenticated", policy_update: "authenticated", policy_list: "public", policy_get: "public",
+      } }),
+    });
+    // Create with a flat title (no locale param → default locale en).
+    const created = await fetch(url(`/v1/projects/${pid}/items?id=tee`), {
+      method: "POST", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ title: "Classic Tee", price: 1500 }),
+    });
+    expect(created.status).toBe(201);
+    // Add the Arabic translation via a flat PATCH under ?locale=ar.
+    const patched = await fetch(url(`/v1/projects/${pid}/items/tee?locale=ar`), {
+      method: "PATCH", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ title: "تي شيرت كلاسيكي" }),
+    });
+    expect(patched.status).toBe(200);
+    // Reads resolve flat per locale; ar falls back to en for missing tags.
+    const en = (await (await fetch(url(`/v1/projects/${pid}/items/tee?locale=en`))).json()) as { title: string };
+    const ar = (await (await fetch(url(`/v1/projects/${pid}/items/tee?locale=ar`))).json()) as { title: string };
+    const def = (await (await fetch(url(`/v1/projects/${pid}/items/tee`))).json()) as { title: string };
+    expect(en.title).toBe("Classic Tee");
+    expect(ar.title).toBe("تي شيرت كلاسيكي");
+    expect(def.title).toBe("Classic Tee"); // default locale
+    // locale=all returns the raw map (the authoring/export shape).
+    const all = (await (await fetch(url(`/v1/projects/${pid}/items/tee?locale=all`))).json()) as { title: Record<string, string> };
+    expect(all.title).toEqual({ en: "Classic Tee", ar: "تي شيرت كلاسيكي" });
+    // Apply (PUT) one locale flat must NOT erase the other translation.
+    const put = await fetch(url(`/v1/projects/${pid}/items/tee?locale=en`), {
+      method: "PUT", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ title: "Classic Tee v2", price: 1600 }),
+    });
+    expect(put.status).toBe(200);
+    const after = (await (await fetch(url(`/v1/projects/${pid}/items/tee?locale=all`))).json()) as { title: Record<string, string> };
+    expect(after.title).toEqual({ en: "Classic Tee v2", ar: "تي شيرت كلاسيكي" });
+    // LIST resolves per row.
+    const listed = (await (await fetch(url(`/v1/projects/${pid}/items?locale=ar`))).json()) as { results: { title: string }[] };
+    expect(listed.results[0]!.title).toBe("تي شيرت كلاسيكي");
+  }, 30_000);
+});
+
 describe("commerce cart→checkout (baas/commerce.md)", () => {
   it("a pool user adds a product to cart and checks out to a pending order", async () => {
     const cookie = await signUp("merchant");
