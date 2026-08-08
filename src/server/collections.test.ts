@@ -70,6 +70,18 @@ describe("hosted developer studio (/studio)", () => {
     expect(html).toContain("Developer studio");
     expect(html).toContain("/api/auth/sign-"); // cookie auth, same origin
   });
+
+  it("ships the raw ⇄ visual toggle and the visual builders", async () => {
+    const html = await (await fetch(url("/studio"))).text();
+    expect(html).toContain('id="mode-visual"'); // the toggle
+    expect(html).toContain('id="mode-raw"');
+    expect(html).toContain('id="v-fields"'); // collection field-row builder
+    expect(html).toContain('id="v-theme"'); // theme token rows (color pickers)
+    expect(html).toContain('id="v-blocks"'); // page block editor
+    expect(html).toContain("oklchToHex"); // picker displays oklch tokens
+    // Both modes serialize to the same public contract via the one Apply button.
+    expect(html).toContain("refreshVisual");
+  });
 });
 
 describe("hosted collections (JIT)", () => {

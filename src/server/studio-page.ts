@@ -6,7 +6,13 @@
  * Application-plane admin (products/orders) belongs to each consumer app.
  * Same one-write-surface law as every client: everything below is the
  * public /v1 + /api/auth contract.
+ *
+ * Two editing modes per tab (studio-visual.ts): "raw" (the JSON/CSS
+ * textareas) and "visual" (field-row builder / color pickers / block
+ * editor) — both edit the same document; Apply PUTs identical bodies.
  */
+import { visualJs } from "./studio-visual";
+
 export const studioHtml = `<!doctype html>
 <html lang="en" data-bs-theme="dark">
 <head>
@@ -47,6 +53,10 @@ export const studioHtml = `<!doctype html>
       <select id="project" class="form-select" style="max-width:22rem"></select>
       <input id="new-name" class="form-control" style="max-width:14rem" placeholder="New project name">
       <button id="new-go" class="btn btn-outline-primary">Create</button>
+      <div class="btn-group btn-group-sm ms-auto" role="group" aria-label="Editing mode">
+        <button id="mode-raw" type="button" class="btn btn-outline-secondary">Raw</button>
+        <button id="mode-visual" type="button" class="btn btn-outline-secondary">Visual</button>
+      </div>
     </div>
     <ul class="nav nav-tabs">
       <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#t-col">Collections</button></li>
@@ -63,7 +73,23 @@ export const studioHtml = `<!doctype html>
             <button id="col-new" class="btn btn-sm btn-outline-primary mt-2">New collection</button></div>
           <div class="col-md-8">
             <input id="col-slug" class="form-control form-control-sm mono mb-2" placeholder="slug">
-            <textarea id="col-body" class="form-control" rows="16" spellcheck="false"></textarea>
+            <div data-raw><textarea id="col-body" class="form-control" rows="16" spellcheck="false"></textarea></div>
+            <div data-visual class="d-none">
+              <div class="d-flex gap-2 mb-2">
+                <input id="v-singular" class="form-control form-control-sm mono" placeholder="singular">
+                <input id="v-plural" class="form-control form-control-sm mono" placeholder="plural">
+              </div>
+              <div class="d-flex gap-3 flex-wrap mb-2 small align-items-center">
+                <label class="d-flex align-items-center gap-1">create <select id="v-pol-create" class="form-select form-select-sm w-auto"><option value="">—</option><option>public</option><option>authenticated</option><option>owner</option></select></label>
+                <label class="d-flex align-items-center gap-1">list <select id="v-pol-list" class="form-select form-select-sm w-auto"><option value="">—</option><option>public</option><option>authenticated</option><option>owner</option></select></label>
+                <label class="d-flex align-items-center gap-1">get <select id="v-pol-get" class="form-select form-select-sm w-auto"><option value="">—</option><option>public</option><option>authenticated</option><option>owner</option></select></label>
+                <label class="d-flex align-items-center gap-1">update <select id="v-pol-update" class="form-select form-select-sm w-auto"><option value="">—</option><option>public</option><option>authenticated</option><option>owner</option></select></label>
+                <label class="d-flex align-items-center gap-1">delete <select id="v-pol-delete" class="form-select form-select-sm w-auto"><option value="">—</option><option>public</option><option>authenticated</option><option>owner</option></select></label>
+              </div>
+              <div id="v-fields" class="vstack"></div>
+              <button id="v-add-field" class="btn btn-sm btn-outline-primary mt-2">Add field</button>
+              <p class="small text-secondary mt-1 mb-0">An "owner" policy auto-adds the created_by field + owner binding on apply.</p>
+            </div>
             <div class="d-flex gap-2 mt-2">
               <button id="col-save" class="btn btn-primary btn-sm">Apply definition</button>
               <button id="col-del" class="btn btn-outline-danger btn-sm">Delete</button>
@@ -77,7 +103,11 @@ export const studioHtml = `<!doctype html>
           <input id="theme-slug" class="form-control form-control-sm mono" style="max-width:12rem" placeholder="slug (new)">
           <span class="small text-secondary">served at /v1/projects/{p}/theme.css</span>
         </div>
-        <textarea id="theme-body" class="form-control" rows="16" spellcheck="false"></textarea>
+        <div data-raw><textarea id="theme-body" class="form-control" rows="16" spellcheck="false"></textarea></div>
+        <div data-visual class="d-none">
+          <div id="v-theme"></div>
+          <p class="small text-secondary mt-2 mb-0">Color picks write hex back into the token (any CSS color is legal); other tokens edit as text. Non-token CSS is preserved only in Raw mode.</p>
+        </div>
         <button id="theme-save" class="btn btn-primary btn-sm mt-2">Apply theme</button>
       </div>
       <div class="tab-pane fade" id="t-pages">
@@ -85,7 +115,15 @@ export const studioHtml = `<!doctype html>
           <select id="page-pick" class="form-select form-select-sm" style="max-width:14rem"></select>
           <input id="page-slug" class="form-control form-control-sm mono" style="max-width:14rem" placeholder="slug (or slug@ar)">
         </div>
-        <textarea id="page-body" class="form-control" rows="14" spellcheck="false"></textarea>
+        <div data-raw><textarea id="page-body" class="form-control" rows="14" spellcheck="false"></textarea></div>
+        <div data-visual class="d-none">
+          <input id="v-page-title" class="form-control form-control-sm mb-2" placeholder="Page title">
+          <div id="v-blocks"></div>
+          <div class="d-flex gap-2">
+            <button id="v-add-hero" class="btn btn-sm btn-outline-primary">+ Hero</button>
+            <button id="v-add-md" class="btn btn-sm btn-outline-primary">+ Markdown</button>
+          </div>
+        </div>
         <button id="page-save" class="btn btn-primary btn-sm mt-2">Apply page</button>
       </div>
       <div class="tab-pane fade" id="t-forms">
@@ -179,10 +217,12 @@ el("col-list").addEventListener("click", async (event) => {
   const row = await (await api("/v1/projects/" + pid + "/collections/" + slug)).json();
   el("col-slug").value = slug;
   el("col-body").value = JSON.stringify({ definition: row.definition }, null, 2);
+  window.refreshVisual?.();
 });
 el("col-new").onclick = () => {
   el("col-slug").value = "";
   el("col-body").value = JSON.stringify({ definition: { singular: "thing", plural: "things", fields: [{ name: "title", type: "string", required: true }], policy_create: "authenticated", policy_list: "public", policy_get: "public" } }, null, 2);
+  window.refreshVisual?.();
 };
 el("col-save").onclick = async () => {
   try {
@@ -200,6 +240,7 @@ el("theme-pick").onchange = async () => {
   const slug = el("theme-pick").value;
   el("theme-slug").value = slug;
   el("theme-body").value = slug ? (await (await api("/v1/projects/" + pid + "/themes/" + slug)).json()).css ?? "" : "";
+  window.refreshVisual?.();
 };
 el("theme-save").onclick = async () => {
   const slug = el("theme-slug").value || "default";
@@ -209,10 +250,13 @@ el("theme-save").onclick = async () => {
 el("page-pick").onchange = async () => {
   const slug = el("page-pick").value;
   el("page-slug").value = slug;
-  if (!slug) return void (el("page-body").value = JSON.stringify({ title: "New page", data: { root: { props: {} }, content: [] } }, null, 2));
-  const row = await (await api("/v1/projects/" + pid + "/pages/" + slug)).json();
-  const { path, create_time, update_time, created_by, ...doc } = row;
-  el("page-body").value = JSON.stringify(doc, null, 2);
+  if (!slug) el("page-body").value = JSON.stringify({ title: "New page", data: { root: { props: {} }, content: [] } }, null, 2);
+  else {
+    const row = await (await api("/v1/projects/" + pid + "/pages/" + slug)).json();
+    const { path, create_time, update_time, created_by, ...doc } = row;
+    el("page-body").value = JSON.stringify(doc, null, 2);
+  }
+  window.refreshVisual?.();
 };
 el("page-save").onclick = async () => {
   try {
@@ -237,6 +281,7 @@ el("key-mint").onclick = async () => {
   el("key-out").classList.remove("d-none");
 };
 boot();
+${visualJs}
 </script>
 </body>
 </html>`;
