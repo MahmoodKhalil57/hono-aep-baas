@@ -3,7 +3,7 @@ import { createCommerce, type Commerce, type VariantLookup } from "hono-aep-comm
 import { jsonRows } from "hono-aep-drizzle";
 import type { EventEnvelope, Json } from "hono-aep";
 import { db } from "../db/registry";
-import { eventSink, notifications } from "./services";
+import { billing, eventSink, notifications } from "./services";
 
 /**
  * Per-project commerce (baas/commerce.md): the variant lookup reads the
@@ -37,17 +37,33 @@ export function projectCommerce(projectId: string): Commerce {
 
   const onEvent = async (e: EventEnvelope): Promise<void> => {
     if (eventSink) await eventSink({ ...e, path: `${scope}/${e.path}`, type: `projects.${projectId}.${e.type}` });
-    // order_completed → the confirmation email (the derived, trustworthy event).
-    if (e.type === "order_completed" && notifications) {
-      const d = e.data as { order_id?: string; total_cents?: number; products?: { name?: string; quantity?: number }[] };
-      const lines = (d.products ?? []).map((i) => `${i.quantity}× ${i.name ?? "item"}`).join(", ");
-      // The order's customer is the principal; the app maps it to an email
-      // out of band — here we log via a topic-less notify to the owner.
-      await notifications.notify({
-        to: { email: "orders@saastarter2.example" },
-        content: { subject: `Order ${d.order_id} confirmed`, body: `Paid: ${lines} — total ${(d.total_cents ?? 0) / 100} USD.` },
-        channels: ["email"],
-      }).catch(() => {});
+    // order_completed → the derived, trustworthy consequences of a paid order.
+    if (e.type === "order_completed") {
+      const d = e.data as {
+        order_id?: string; customer?: string; total_cents?: number;
+        products?: { product_id?: string; name?: string; quantity?: number }[];
+      };
+      const products = d.products ?? [];
+      // (1) Ownership: grant `owns:{product}` to the buyer for each line item
+      //     — the entitlement the storefront's source-unlock authz gates on.
+      //     A commerce order confers exactly what was bought (billing.md).
+      if (billing && d.customer) {
+        for (const item of products) {
+          if (!item.product_id) continue;
+          await billing
+            .grantEntitlement({ principal: d.customer, entitlement: `owns:${item.product_id}`, source: `order:${d.order_id}:${item.product_id}` })
+            .catch(() => ({ granted: [] }));
+        }
+      }
+      // (2) The confirmation email (notifications kind).
+      if (notifications) {
+        const lines = products.map((i) => `${i.quantity}× ${i.name ?? "item"}`).join(", ");
+        await notifications.notify({
+          to: { email: "orders@saastarter2.example" },
+          content: { subject: `Order ${d.order_id} confirmed`, body: `Paid: ${lines} — total ${(d.total_cents ?? 0) / 100} USD.` },
+          channels: ["email"],
+        }).catch(() => {});
+      }
     }
   };
 

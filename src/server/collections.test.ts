@@ -541,5 +541,10 @@ describe("commerce cart→checkout (baas/commerce.md)", () => {
     // until the paid webhook. Either way the snapshot total is authoritative.
     expect(body.order.status).toBe("paid");
     expect(body.order.total_cents).toBe(3000);
+    // The paid order shows up in the buyer's order history (commerce/orders).
+    const hist = await fetch(url(`/v1/projects/${pid}/commerce/orders`), { headers: { Authorization: `Bearer ${tok2}` } });
+    const { orders } = (await hist.json()) as { orders: { status: string; items: unknown[] }[] };
+    expect(orders).toHaveLength(1);
+    expect(orders[0]!.status).toBe("paid");
   }, 30_000);
 });

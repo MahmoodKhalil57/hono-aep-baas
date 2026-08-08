@@ -241,6 +241,8 @@ export function createHandler(): (request: Request) => Promise<Response> {
         const customer = principal.userId;
         if (segments[5] === "cart" && request.method === "GET")
           return corsify(Response.json(await commerce.getCart({ scope: `projects/${pid}`, customer })));
+        if (segments[5] === "orders" && request.method === "GET")
+          return corsify(Response.json({ orders: await commerce.orders({ scope: `projects/${pid}`, customer }) }));
         if (segments[5] === "cart:add" && request.method === "POST") {
           const b = (await request.json().catch(() => ({}))) as { variant?: string; quantity?: number };
           const r = await commerce.addItem({ scope: `projects/${pid}`, customer, variant: String(b.variant), quantity: b.quantity ?? 1 });
