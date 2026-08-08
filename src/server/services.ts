@@ -7,6 +7,7 @@ import {
   type Notifications,
 } from "hono-aep-notifications";
 import { createConnectionsConsumer, registerConnectionsKind, type ConnectionsConsumer } from "hono-aep-connections";
+import { createBilling, registerBillingKind, type Billing } from "hono-aep-billing";
 import { composeSinks, type EventSink } from "hono-aep";
 import { keyPrincipal, type Principal } from "hono-aep-auth";
 import { db } from "../db/registry";
@@ -17,6 +18,7 @@ registerAuthnKind();
 registerJobsKind();
 registerNotificationsKind();
 registerConnectionsKind();
+registerBillingKind();
 
 const appRoot = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 export const instances: ServiceInstance[] = readServices(appRoot);
@@ -55,10 +57,10 @@ export const notifications: Notifications | null = (() => {
 /** Session-or-key principal — one resolver for the compiled AND JIT apps. */
 export async function principalFrom(c: import("hono").Context): Promise<Principal | null> {
   if (!authn) return null;
-  return (
+  const base =
     (await authn.principal(c.req.raw.headers)) ??
-    (await keyPrincipal(db, c.req.header("Authorization")))
-  );
+    (await keyPrincipal(db, c.req.header("Authorization")));
+  return withEntitlements(base);
 }
 
 /** The resource-event sink shared by every app instance (jobs consumes). */
@@ -69,3 +71,19 @@ export const eventSink: EventSink | null = jobs ? composeSinks(jobs.eventConsume
 export const connectionsConsumer: ConnectionsConsumer | null = jobs
   ? createConnectionsConsumer({ instances, enqueue: jobs.enqueue, env: process.env })
   : null;
+
+export const billing: Billing | null = (() => {
+  const instance = resolveInstance(instances, "billing");
+  return instance ? createBilling({ instance, db, env: process.env }) : null;
+})();
+
+/**
+ * Principal resolution with ENTITLEMENTS merged (billing populates the
+ * authz `entitlement` predicate). Every surface's principal chain calls
+ * this, so a policied `{entitlement:["pro"]}` gates on real grants.
+ */
+export async function withEntitlements(principal: Principal | null): Promise<Principal | null> {
+  if (!principal || !billing) return principal;
+  const entitlements = await billing.entitlementsFor(principal.userId);
+  return entitlements.length > 0 ? { ...principal, entitlements } : principal;
+}

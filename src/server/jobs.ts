@@ -3,6 +3,7 @@ import type { JobHandler } from "hono-aep-jobs";
 import type { Notifications } from "hono-aep-notifications";
 import { db } from "../db/registry";
 import { forms } from "../db/schema";
+import { billing } from "./services";
 
 /** The imperative side of services/jobs.cms.json — handler types only. */
 export function createJobHandlers(deps: {
@@ -14,10 +15,16 @@ export function createJobHandlers(deps: {
      * inline). The billing kind will own the object graph; today this
      * records the event type so the pipeline is provable end to end.
      */
-    "stripe-event": (ctx) => {
-      const webhook = (ctx.payload as { webhook?: { type?: string } }).webhook;
-      ctx.log(`stripe event: ${webhook?.type ?? "unknown"}`);
-      return { received: webhook?.type ?? null };
+    "stripe-event": async (ctx) => {
+      // Verified Stripe event (connections inbound → jobs) → billing.
+      // A real adapter maps checkout.session.completed → the neutral
+      // {kind,principal,product,eventId}; here the webhook carries it
+      // directly (the local/test path). billing.applyEvent is idempotent.
+      const webhook = (ctx.payload as { webhook?: Record<string, unknown> }).webhook ?? {};
+      ctx.log(`stripe event: ${String(webhook["type"] ?? webhook["kind"] ?? "unknown")}`);
+      if (!billing) return { received: null };
+      const result = await billing.applyEvent(webhook as never);
+      return { granted: result.granted, revoked: result.revoked };
     },
     /**
      * Runs off `projects.*.forms.*.submissions.*.create`: announce the

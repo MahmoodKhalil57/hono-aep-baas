@@ -151,6 +151,7 @@ const RESERVED_PLURALS = new Set([
   "blocks",
   "auth",
   "webhooks",
+  "billing",
   "keys",
   "operations",
   "notifications",

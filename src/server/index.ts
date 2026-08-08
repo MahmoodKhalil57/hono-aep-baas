@@ -10,7 +10,7 @@ import { drizzleAepStorage } from "hono-aep-drizzle";
 import { block, collection, form, page, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
 import { projectPool } from "./pools";
-import { authn, connectionsConsumer, eventSink, jobs, notifications, principalFrom } from "./services";
+import { authn, billing, connectionsConsumer, eventSink, jobs, notifications, principalFrom } from "./services";
 
 /**
  * mizan-gpp — forms-as-a-service (baas/spec/). The whole server: the AEP
@@ -190,6 +190,27 @@ const server = Bun.serve({
       // where {plural} is not a compiled child → the project's declared
       // collections app (live the moment its document is applied).
       const segments = url.pathname.split("/"); // ["", "v1", "projects", p, seg, …]
+      // Billing self-serve (local provider): an authenticated principal
+      // completes checkout → the product's entitlements are granted to
+      // THEM. Real providers return a hosted checkout URL instead; grants
+      // then arrive via the inbound webhook. GET → the catalog.
+      if (segments[2] === "projects" && segments[3] && segments[4] === "billing" && segments[5] === "checkout" && !segments[6]) {
+        if (!billing) return corsify(Response.json({ title: "No billing configured." }, { status: 404 }));
+        if (request.method === "GET") return corsify(Response.json(billing.catalog()));
+        if (request.method !== "POST") return corsify(Response.json({ title: "Method not allowed." }, { status: 405 }));
+        const principal =
+          (await principalFrom({ req: { raw: request, header: (n: string) => request.headers.get(n) } } as never)) ??
+          (await (await import("./pools")).poolPrincipal(segments[3], request.headers));
+        if (!principal) return corsify(Response.json({ title: "Sign in to check out." }, { status: 401 }));
+        const bodyJson = (await request.json().catch(() => ({}))) as { product?: string };
+        const product = String(bodyJson.product ?? "");
+        const result = await billing.grant({
+          principal: principal.userId,
+          product,
+          source: `local:${principal.userId}:${product}`,
+        });
+        return corsify(Response.json({ granted: result.granted }));
+      }
       // Inbound webhooks (connections consumer): signed third-party
       // events (Stripe, …) verified then handed to jobs — NEVER inline.
       // Public by design; the SIGNATURE is the authentication.

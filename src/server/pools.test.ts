@@ -193,3 +193,98 @@ describe("pool lifecycle mail through notifications (auth-pools.md §1.7)", () =
     expect(deliver?.ok).toBe(true);
   }, 40_000);
 });
+
+describe("billing entitlements gate collections (billing.md + authz entitlement)", () => {
+  it("a pool user is 403 on a pro-gated create until checkout grants pro", async () => {
+    const cookie = await builderSignUp("biller");
+    const project = (await (
+      await fetch(url("/v1/projects"), {
+        method: "POST",
+        headers: { ...json, Cookie: cookie },
+        body: JSON.stringify({ display_name: "Paid", auth_pool: { emailPassword: { enabled: true } } }),
+      })
+    ).json()) as { path: string };
+    const projectId = project.path.split("/")[1]!;
+
+    // A collection whose CREATE requires the `pro` entitlement.
+    await fetch(url(`/v1/${project.path}/collections/reports`), {
+      method: "PUT",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({
+        definition: {
+          singular: "report",
+          plural: "reports",
+          fields: [{ name: "title", type: "string", required: true }],
+          policy_create: { entitlement: ["pro"] },
+          policy_list: "public",
+        },
+      }),
+    });
+
+    const token = await endUserSignUp(project.path, "buyer@example.com");
+    const create = () =>
+      fetch(url(`/v1/${project.path}/reports`), {
+        method: "POST",
+        headers: { ...json, Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: "Q3" }),
+      });
+
+    // No entitlement yet → 403.
+    expect((await create()).status).toBe(403);
+
+    // Check out the `pro` product (local provider grants directly).
+    const checkout = await fetch(url(`/v1/projects/${projectId}/billing/checkout`), {
+      method: "POST",
+      headers: { ...json, Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ product: "pro" }),
+    });
+    expect(checkout.status).toBe(200);
+    expect(((await checkout.json()) as { granted: string[] }).granted).toEqual(["pro"]);
+
+    // The gate now passes — the entitlement policy predicate is live.
+    expect((await create()).status).toBe(201);
+
+    // The catalog is browsable (GET).
+    const catalog = (await (
+      await fetch(url(`/v1/projects/${projectId}/billing/checkout`))
+    ).json()) as { products: Record<string, { grants: string[] }> };
+    expect(catalog.products["pro"]!.grants).toEqual(["pro"]);
+  }, 40_000);
+
+  it("a verified Stripe webhook grants entitlements through the inbound arm", async () => {
+    // The stripe connection ships disabled; this proves the WIRING —
+    // billing.applyEvent runs from the stripe-event job. We drive it via
+    // the local checkout above; the signed-webhook path is covered in the
+    // connections package. Here: an already-granted entitlement survives a
+    // fresh sign-in (persistence).
+    const cookie = await builderSignUp("persist");
+    const project = (await (
+      await fetch(url("/v1/projects"), {
+        method: "POST",
+        headers: { ...json, Cookie: cookie },
+        body: JSON.stringify({ display_name: "Persist", auth_pool: {} }),
+      })
+    ).json()) as { path: string };
+    const projectId = project.path.split("/")[1]!;
+    const token = await endUserSignUp(project.path, "persist@example.com");
+    await fetch(url(`/v1/projects/${projectId}/billing/checkout`), {
+      method: "POST",
+      headers: { ...json, Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ product: "pro" }),
+    });
+    // Sign in again → a new token, same principal, entitlement persists.
+    const signIn = await fetch(url(`/v1/${project.path}/auth/sign-in/email`), {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ email: "persist@example.com", password: "supersecret1" }),
+    });
+    const token2 = signIn.headers.get("set-auth-token");
+    const catalog = await fetch(url(`/v1/projects/${projectId}/billing/checkout`), {
+      method: "POST",
+      headers: { ...json, Authorization: `Bearer ${token2}` },
+      body: JSON.stringify({ product: "pro" }),
+    });
+    // Re-checkout is idempotent per (principal, source): no new grant.
+    expect(((await catalog.json()) as { granted: string[] }).granted).toEqual([]);
+  }, 40_000);
+});

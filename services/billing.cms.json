@@ -1,0 +1,25 @@
+{
+  "config": {
+    "entitlements": {
+      "pro": "Full access to premium collections and higher quotas."
+    },
+    "products": {
+      "pro": {
+        "grants": [
+          "pro"
+        ],
+        "name": "Pro",
+        "prices": {
+          "monthly": {
+            "amountCents": 900,
+            "currency": "usd",
+            "interval": "month"
+          }
+        }
+      }
+    }
+  },
+  "description": "Entitlements-core billing (local provider): the `pro` product grants the `pro` entitlement. Swap provider to stripe + secretKey/webhookSecret to take real payments; grants then arrive via the inbound Stripe webhook (services/stripe.cms.json).",
+  "kind": "billing",
+  "provider": "local"
+}

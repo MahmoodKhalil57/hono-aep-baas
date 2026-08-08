@@ -3,7 +3,7 @@ import { createAuthPool, type AuthPool, type AuthPoolConfig } from "hono-aep-aut
 import type { Principal } from "hono-aep";
 import { db } from "../db/registry";
 import { projects } from "../db/schema";
-import { notifications } from "./services";
+import { notifications, withEntitlements } from "./services";
 import type { PoolEmailSender } from "hono-aep-auth";
 
 /**
@@ -62,5 +62,5 @@ export async function poolPrincipal(
   headers: Headers,
 ): Promise<Principal | null> {
   const pool = await projectPool(projectId);
-  return pool ? pool.principal(headers) : null;
+  return pool ? withEntitlements(await pool.principal(headers)) : null;
 }

@@ -15,12 +15,15 @@ import { notificationTables } from "hono-aep-notifications";
 // JIT collection rows (cms/execution-modes.md §3) ride it too.
 export { jsonRows } from "hono-aep-drizzle";
 import { jsonRowsTables } from "hono-aep-drizzle";
+export { entitlementGrant } from "hono-aep-billing";
+import { billingTables } from "hono-aep-billing";
 
 export const tables = {
   ...generatedTables,
   ...jobsTables,
   ...notificationTables,
   ...jsonRowsTables,
+  ...billingTables,
   ...apiKeyTables,
   ...poolTables,
   ...authTables,

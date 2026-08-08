@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "mizan-gpp — forms-as-a-service on the hono-aep suite (spec/: the product contract). Minimal LoC by design: the dialect + one submit alias + job handlers.",
+  "description": "mizan-gpp \u2014 forms-as-a-service on the hono-aep suite (spec/: the product contract). Minimal LoC by design: the dialect + one submit alias + job handlers.",
   "scripts": {
     "dev": "bun --hot src/server/index.ts",
     "start": "bun src/server/index.ts",
@@ -17,6 +17,7 @@
     "hono": "^4.11.0",
     "hono-aep": "file:../customPackages/hono-aep",
     "hono-aep-auth": "file:../customPackages/hono-aep-auth",
+    "hono-aep-billing": "file:../customPackages/hono-aep-billing",
     "hono-aep-cms": "file:../customPackages/hono-aep-cms",
     "hono-aep-connections": "file:../customPackages/hono-aep-connections",
     "hono-aep-drizzle": "file:../customPackages/hono-aep-drizzle",
