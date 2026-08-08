@@ -7,6 +7,7 @@ import {
   type Notifications,
 } from "hono-aep-notifications";
 import { createConnectionsConsumer, registerConnectionsKind, type ConnectionsConsumer } from "hono-aep-connections";
+import { createGateway, stripeGatewayDriver } from "hono-aep-gateway";
 import { createBilling, registerBillingKind, type Billing } from "hono-aep-billing";
 import { createFlags, registerFlagsKind, type Flags } from "hono-aep-flags";
 import { createSearch, registerSearchKind, type Search } from "hono-aep-search";
@@ -80,6 +81,25 @@ export const connectionsConsumer: ConnectionsConsumer | null = jobs
 export const billing: Billing | null = (() => {
   const instance = resolveInstance(instances, "billing");
   return instance ? createBilling({ instance, db, env: process.env }) : null;
+})();
+
+/**
+ * The payment gateway (gateway.md): the NEUTRAL driver behind embedded
+ * in-page checkout. Constructed from env — present only when the stripe
+ * keys are; commerce degrades to hosted mode without it. Swapping the
+ * provider = swapping the driver HERE; nothing downstream changes.
+ */
+export const gateway = (() => {
+  const secretKey = process.env["STRIPE_SECRET_KEY"];
+  const publishableKey = process.env["STRIPE_PUBLISHABLE_KEY"] ?? process.env["NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"];
+  if (!secretKey || !publishableKey) return null;
+  return createGateway(
+    stripeGatewayDriver({
+      secretKey,
+      publishableKey,
+      ...(process.env["STRIPE_WEBHOOK_SECRET"] ? { webhookSecret: process.env["STRIPE_WEBHOOK_SECRET"] } : {}),
+    }),
+  );
 })();
 
 /**

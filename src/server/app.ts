@@ -14,7 +14,7 @@ import { drizzleAepStorage } from "hono-aep-drizzle";
 import { block, collection, form, page, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
 import { projectPool } from "./pools";
-import { authn, billing, connectionsConsumer, eventSink, flags, jobs, notifications, principalFrom, search } from "./services";
+import { authn, billing, connectionsConsumer, eventSink, flags, gateway, jobs, notifications, principalFrom, search } from "./services";
 
 /**
  * mizan-gpp — forms-as-a-service (baas/spec/). The whole server: the AEP
@@ -398,7 +398,7 @@ export function createHandler(): (request: Request) => Promise<Response> {
           return corsify(Response.json(verdict, { status: verdict.ok ? 200 : 422 }));
         }
         if (segments[5] === "cart:checkout" && request.method === "POST") {
-          const co = (await request.json().catch(() => ({}))) as { discount?: string };
+          const co = (await request.json().catch(() => ({}))) as { discount?: string; payment?: string };
           let order: Awaited<ReturnType<typeof commerce.checkout>>["order"];
           try {
             ({ order } = await commerce.checkout({
@@ -407,6 +407,26 @@ export function createHandler(): (request: Request) => Promise<Response> {
           } catch (problem) {
             // Empty cart / rejected coupon are client errors, not 500s.
             return corsify(Response.json({ title: (problem as Error).message }, { status: 422 }));
+          }
+          // EMBEDDED payment (gateway.md §3): the frontend keeps the page;
+          // the gateway's element takes only the card fields. The verified
+          // payment.succeeded webhook fires :pay — same money discipline.
+          if (co.payment === "embedded") {
+            if (!gateway) return corsify(Response.json({ title: "Embedded payment is not configured." }, { status: 422 }));
+            try {
+              const payment = await gateway.createPayment({
+                amountCents: order.total_cents,
+                currency: order.currency,
+                description: `Order ${order.id.slice(0, 8)}`,
+                metadata: { order: order.id, project: pid, principal: customer },
+              });
+              return corsify(Response.json({
+                order,
+                payment: { gateway: gateway.name, clientToken: payment.clientToken, client: gateway.clientConfig() },
+              }));
+            } catch (problem) {
+              return corsify(Response.json({ title: (problem as Error).message }, { status: 502 }));
+            }
           }
           // Bridge to billing (commerce.md §3): charge the order TOTAL (an
           // ad-hoc amount — an order snapshots its own price, it is not a
@@ -511,10 +531,22 @@ export function createHandler(): (request: Request) => Promise<Response> {
           // THAT is what emits the trustworthy order_completed + decrements
           // inventory. handleWebhook already verified the signature above.
           const { stripeEventToOrder } = await import("hono-aep-billing");
-          const orderRef = stripeEventToOrder(JSON.parse(body) as Json);
+          const parsedEvent = JSON.parse(body) as Json;
+          const orderRef = stripeEventToOrder(parsedEvent);
           if (orderRef) {
             const commerce = projectCommerce(orderRef.projectId ?? segments[3]!);
             await commerce.pay({ orderId: orderRef.orderId, payment: `stripe:${orderRef.eventId}` }).catch(() => null);
+          }
+          // Embedded-gateway events (gateway.md §2): the driver normalizes
+          // provider vocabulary; metadata carries the order coordinates.
+          const neutral = gateway?.webhookEvent(parsedEvent) ?? null;
+          if (neutral?.metadata["order"] && neutral.metadata["project"]) {
+            const commerce = projectCommerce(neutral.metadata["project"]);
+            if (neutral.type === "payment.succeeded") {
+              await commerce.pay({ orderId: neutral.metadata["order"], payment: `${gateway!.name}:${neutral.paymentId}` }).catch(() => null);
+            } else if (neutral.type === "refund.succeeded") {
+              await commerce.refund({ orderId: neutral.metadata["order"], reason: "gateway refund" }).catch(() => null);
+            }
           }
           return corsify(Response.json(result, { status: 202 }));
         } catch (problem) {
