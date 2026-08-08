@@ -8,6 +8,7 @@ import {
 } from "hono-aep-notifications";
 import { createConnectionsConsumer, registerConnectionsKind, type ConnectionsConsumer } from "hono-aep-connections";
 import { createBilling, registerBillingKind, type Billing } from "hono-aep-billing";
+import { createFlags, registerFlagsKind, type Flags } from "hono-aep-flags";
 import { composeSinks, type EventSink } from "hono-aep";
 import { keyPrincipal, type Principal } from "hono-aep-auth";
 import { db } from "../db/registry";
@@ -19,6 +20,7 @@ registerJobsKind();
 registerNotificationsKind();
 registerConnectionsKind();
 registerBillingKind();
+registerFlagsKind();
 
 const appRoot = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 export const instances: ServiceInstance[] = readServices(appRoot);
@@ -87,3 +89,8 @@ export async function withEntitlements(principal: Principal | null): Promise<Pri
   const entitlements = await billing.entitlementsFor(principal.userId);
   return entitlements.length > 0 ? { ...principal, entitlements } : principal;
 }
+
+export const flags: Flags | null = (() => {
+  const instance = resolveInstance(instances, "flags");
+  return instance ? createFlags({ instance }) : null;
+})();

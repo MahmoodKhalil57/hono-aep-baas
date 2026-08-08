@@ -288,3 +288,39 @@ describe("billing entitlements gate collections (billing.md + authz entitlement)
     expect(((await catalog.json()) as { granted: string[] }).granted).toEqual([]);
   }, 40_000);
 });
+
+describe("flags (OpenFeature) compose with entitlements", () => {
+  it("a pro-gated flag flips from default to true after checkout", async () => {
+    const cookie = await builderSignUp("flagger");
+    const project = (await (
+      await fetch(url("/v1/projects"), {
+        method: "POST",
+        headers: { ...json, Cookie: cookie },
+        body: JSON.stringify({ display_name: "Flagged", auth_pool: {} }),
+      })
+    ).json()) as { path: string };
+    const projectId = project.path.split("/")[1]!;
+
+    // Anonymous: defaults (welcome-banner string + advanced-export false).
+    const anon = (await (await fetch(url(`/v1/projects/${projectId}/flags`))).json()) as Record<string, unknown>;
+    expect(anon["welcome-banner"]).toBe("Build a backend in git.");
+    expect(anon["advanced-export"]).toBe(false);
+
+    const token = await endUserSignUp(project.path, "flags@example.com");
+    const flagsFor = async () =>
+      (await (
+        await fetch(url(`/v1/projects/${projectId}/flags`), { headers: { Authorization: `Bearer ${token}` } })
+      ).json()) as Record<string, unknown>;
+
+    // Free user: still false (no pro entitlement).
+    expect((await flagsFor())["advanced-export"]).toBe(false);
+
+    // Buy pro → the flag's entitlement rule matches.
+    await fetch(url(`/v1/projects/${projectId}/billing/checkout`), {
+      method: "POST",
+      headers: { ...json, Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ product: "pro" }),
+    });
+    expect((await flagsFor())["advanced-export"]).toBe(true);
+  }, 40_000);
+});

@@ -1,0 +1,28 @@
+{
+  "config": {
+    "flags": {
+      "advanced-export": {
+        "defaultValue": false,
+        "description": "The premium CSV/JSON export UI — pro plans only.",
+        "rules": [
+          {
+            "value": true,
+            "when": {
+              "entitlement": [
+                "pro"
+              ]
+            }
+          }
+        ],
+        "type": "boolean"
+      },
+      "welcome-banner": {
+        "defaultValue": "Build a backend in git.",
+        "type": "string"
+      }
+    }
+  },
+  "description": "OpenFeature flags: a static welcome-banner string + a pro-gated advanced-export boolean (composes with billing entitlements).",
+  "kind": "flags",
+  "provider": "local"
+}

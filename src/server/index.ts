@@ -4,13 +4,14 @@ import { aepApp, attachMcp, openApiDocument } from "hono-aep";
 import { createApiKey, keyPrincipal } from "hono-aep-auth";
 import { createHealthProbes } from "hono-aep-observability";
 import { parseThemeCss, renderThemeCss } from "hono-aep-cms";
+import { contextOf } from "hono-aep-flags";
 import { db } from "../db/registry";
 import { forms, tables, themes } from "../db/schema";
 import { drizzleAepStorage } from "hono-aep-drizzle";
 import { block, collection, form, page, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
 import { projectPool } from "./pools";
-import { authn, billing, connectionsConsumer, eventSink, jobs, notifications, principalFrom } from "./services";
+import { authn, billing, connectionsConsumer, eventSink, flags, jobs, notifications, principalFrom } from "./services";
 
 /**
  * mizan-gpp — forms-as-a-service (baas/spec/). The whole server: the AEP
@@ -190,6 +191,16 @@ const server = Bun.serve({
       // where {plural} is not a compiled child → the project's declared
       // collections app (live the moment its document is applied).
       const segments = url.pathname.split("/"); // ["", "v1", "projects", p, seg, …]
+      // Flags (OpenFeature): server-evaluate the whole set against the
+      // resolved principal (session/key/pool) so the SPA's first paint
+      // carries values — no flash. Entitlement rules compose with billing.
+      if (segments[2] === "projects" && segments[3] && segments[4] === "flags" && !segments[5] && request.method === "GET") {
+        if (!flags) return corsify(Response.json({}));
+        const principal =
+          (await principalFrom({ req: { raw: request, header: (n: string) => request.headers.get(n) } } as never)) ??
+          (await (await import("./pools")).poolPrincipal(segments[3], request.headers));
+        return corsify(Response.json(flags.evaluateAll(contextOf(principal))));
+      }
       // Billing self-serve (local provider): an authenticated principal
       // completes checkout → the product's entitlements are granted to
       // THEM. Real providers return a hosted checkout URL instead; grants
