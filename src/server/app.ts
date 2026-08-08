@@ -387,6 +387,30 @@ export function createHandler(): (request: Request) => Promise<Response> {
         });
         return corsify(Response.json(result));
       }
+      // Billing portal (manage payment method / cancel subscription): the
+      // principal's customer mapping was recorded from a verified webhook;
+      // no mapping → 404 (nothing to manage yet).
+      if (
+        segments[2] === "projects" && segments[3] && segments[4] === "billing" &&
+        segments[5] === "portal" && !segments[6] && request.method === "POST"
+      ) {
+        if (!billing) return corsify(Response.json({ title: "No billing configured." }, { status: 404 }));
+        const principal =
+          (await principalFrom({ req: { raw: request, header: (n: string) => request.headers.get(n) } } as never)) ??
+          (await (await import("./pools")).poolPrincipal(segments[3], request.headers));
+        if (!principal) return corsify(Response.json({ title: "Sign in." }, { status: 401 }));
+        const b = (await request.json().catch(() => ({}))) as { returnUrl?: string };
+        try {
+          const portal = await billing.portalUrl({
+            principal: principal.userId,
+            returnUrl: String(b.returnUrl ?? `${url.origin}/`),
+          });
+          if (!portal) return corsify(Response.json({ title: "No billing history to manage." }, { status: 404 }));
+          return corsify(Response.json(portal));
+        } catch (problem) {
+          return corsify(Response.json({ title: (problem as Error).message }, { status: 502 }));
+        }
+      }
       // Stripe webhooks: Stripe's own signature (not Standard Webhooks) →
       // billing verifies + grants. Public; the signature is the auth.
       if (
