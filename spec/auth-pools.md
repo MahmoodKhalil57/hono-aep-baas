@@ -24,9 +24,13 @@ project.
 4. Sessions and accounts queryable as project data (owner-policied
    rows), because account dashboards need them.
 5. Verified account deletion: two-phase (emailed token → confirm), with
-   an app-declared **anonymize-instead-of-delete veto** — deletion
-   becomes a transition (`delete-requested → anonymized`) so the veto
-   is declarative, not a hook.
+   an **anonymize-instead-of-delete veto** — IMPLEMENTED: better-auth's
+   deleteUser mails the token, and the `user.delete.before` database hook
+   rewrites name/email to `deleted-<id8>@deleted.invalid` and returns
+   false, vetoing the hard delete (the declarative-transition recast
+   stays the roadmap; the veto behavior is live). Change-email
+   (verification to the NEW address) is IMPLEMENTED too — both ride the
+   sendEmail seam (§1.7).
 6. Role arrays on pool users, checked by the same policy vocabulary
    (`role(...)`); the pool's "admin" role gates the project's generated
    admin surface.
