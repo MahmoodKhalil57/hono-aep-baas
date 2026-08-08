@@ -119,14 +119,19 @@ the commerce event name, `data` carries the properties) and a dedicated
 2. **Checkout** — `POST carts/{c}:checkout` creates an `order` in
    `pending` from the cart's live totals, then calls the billing kind's
    checkout (baas/billing) with the order total as the amount and the
-   order path in metadata. Cart → `converted`.
+   order path in metadata. The cart STAYS `active` — checkout is an
+   attempt, not a commitment; an abandoned or failed payment leaves
+   the shopper's cart exactly as it was.
 3. **Payment → order** — billing's verified provider webhook
    (connections inbound → billing.applyEvent) fires the order's
    `:pay` transition: `pending → paid`. THAT transition (aep/events)
    is what emits the trustworthy `order_completed`, which the
    notifications kind turns into the confirmation email and the
    connections producer delivers as an outbound webhook. Inventory
-   decrements on the same transition.
+   decrements on the same transition — and so does cart CONVERSION:
+   the order remembers its source cart, and `:pay` marks THAT cart
+   `converted` (the shopper's cart clears exactly when the money is
+   real, never before).
 4. **Fulfillment** — the order state machine, all declared transitions:
    `paid → fulfilled → shipped → delivered`, plus `→ refunded` /
    `→ cancelled` (each emitting its event). Merchant-policied.
@@ -219,6 +224,8 @@ like §3a tenancy.
   line item is the one embedded here.
 - Inventory decrement and `order_completed` MUST be the SAME transition
   (no double-sell window).
+- The cart MUST survive an abandoned or failed payment; conversion
+  happens on the paid transition, keyed to the order's source cart.
 
 ## 8. References
 
