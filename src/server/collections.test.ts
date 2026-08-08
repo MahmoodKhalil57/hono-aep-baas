@@ -736,6 +736,11 @@ describe("discounts + fulfillment over hosted collections (commerce.md §3.4-3.5
     expect(stats.revenue_cents).toBe(2400); // the discounted paid total
     expect(stats.by_status["delivered"]).toBe(1);
     expect(stats.top_products[0]).toMatchObject({ product: "kit", units: 1 });
+    // Owner lists ALL orders (?all=1); customers get a clean 403.
+    const all = (await (await fetch(url(`/v1/projects/${pid}/commerce/orders?all=1`), { headers: { Cookie: cookie } })).json()) as { orders: { customer: string; status: string }[] };
+    expect(all.orders).toHaveLength(1);
+    expect(all.orders[0]!.customer).toContain("pool:");
+    expect((await fetch(url(`/v1/projects/${pid}/commerce/orders?all=1`), { headers: { Authorization: `Bearer ${tok}` } })).status).toBe(403);
   }, 30_000);
 });
 

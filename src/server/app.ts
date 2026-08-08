@@ -416,6 +416,24 @@ export function createHandler(): (request: Request) => Promise<Response> {
         if (segments[5] === "cart" && request.method === "GET")
           return corsify(Response.json(await commerce.getCart({ scope: `projects/${pid}`, customer })));
         if (segments[5] === "orders" && request.method === "GET") {
+          // ?all=1 → the MERCHANT's view: every order in the project
+          // (owner-gated; a customer asking for all is a clean 403).
+          if (url.searchParams.get("all") === "1") {
+            const projectRows = await db.select().from(projects).where(eq(projects.id, pid)).limit(1);
+            if (projectRows[0]?.created_by !== principal.userId) {
+              return corsify(Response.json({ title: "Only the project owner lists all orders." }, { status: 403 }));
+            }
+            const { commerceTables } = await import("hono-aep-commerce");
+            const odb = db as unknown as { select(): { from(t: unknown): { where(w: unknown): Promise<unknown[]> } } };
+            const ocol = commerceTables.order as unknown as Record<"scope", never>;
+            const rows = (await odb.select().from(commerceTables.order).where(eq(ocol.scope, `projects/${pid}`))) as {
+              id: string; customer: string; items: unknown; totalCents: number; currency: string; status: string; createTime: string;
+            }[];
+            const all = rows
+              .sort((a, b) => (a.createTime < b.createTime ? 1 : -1))
+              .map((row) => ({ id: row.id, customer: row.customer, items: row.items, total_cents: row.totalCents, currency: row.currency, status: row.status, create_time: row.createTime }));
+            return corsify(Response.json({ orders: all }));
+          }
           const orders = await commerce.orders({ scope: `projects/${pid}`, customer });
           // Deliveries ride along (delivery.md §3): download artifacts get a
           // fresh signed token so plain <a href> works from the storefront.
