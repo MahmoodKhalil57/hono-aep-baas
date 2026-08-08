@@ -530,6 +530,50 @@ describe("definition gate = the full serving pipeline (AEP-122 poison guard)", (
   }, 30_000);
 });
 
+describe("guest checkout + link upgrade (commerce.md §3a)", () => {
+  it("a guest buys; signing up while holding the guest session carries the order + wishlist", async () => {
+    const cookie = await signUp("merchant3");
+    const project = await makeProject(cookie, "GuestShop");
+    const pid = project.split("/")[1]!;
+    await fetch(url(`/v1/${project}`), {
+      method: "PATCH", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ auth_pool: { emailPassword: { enabled: true }, anonymous: { enabled: true } } }),
+    });
+    await fetch(url(`/v1/${project}/collections/catalog`), {
+      method: "PUT", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ definition: { singular: "product", plural: "products", fields: [{ name: "name", type: "string", required: true }, { name: "price_cents", type: "number", integer: true }], policy_create: "authenticated", policy_get: "public", policy_list: "public" } }),
+    });
+    await fetch(url(`/v1/${project}/collections/wishlist`), {
+      method: "PUT", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ definition: { singular: "wishlist-item", plural: "wishlist", fields: [{ name: "product", type: "string", required: true }, { name: "created_by", type: "string" }], policy_create: "authenticated", policy_list: { owner: { field: "created_by" } }, policy_get: { owner: { field: "created_by" } }, policy_update: { owner: { field: "created_by" } }, policy_delete: { owner: { field: "created_by" } }, owner: "created_by" } }),
+    });
+    await fetch(url(`/v1/${project}/products?id=kit`), { method: "POST", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ name: "Kit", price_cents: 2000 }) });
+
+    // ONE call, no form: the guest session (commerce.md §3a.1).
+    const guestIn = await fetch(url(`/v1/${project}/auth/sign-in/anonymous`), { method: "POST", headers: json, body: "{}" });
+    expect(guestIn.status).toBe(200);
+    const guest = guestIn.headers.get("set-auth-token")!;
+    // Guest shops exactly like anyone: wishlist + cart + PAID order (local billing).
+    await fetch(url(`/v1/projects/${pid}/wishlist`), { method: "POST", headers: { ...json, Authorization: `Bearer ${guest}` }, body: JSON.stringify({ product: "kit" }) });
+    await fetch(url(`/v1/projects/${pid}/commerce/cart:add`), { method: "POST", headers: { ...json, Authorization: `Bearer ${guest}` }, body: JSON.stringify({ variant: "kit" }) });
+    const co = (await (await fetch(url(`/v1/projects/${pid}/commerce/cart:checkout`), { method: "POST", headers: { ...json, Authorization: `Bearer ${guest}` }, body: "{}" })).json()) as { order: { status: string } };
+    expect(co.order.status).toBe("paid");
+
+    // Upgrade: sign-up WHILE holding the guest session → rows re-parent.
+    const upgraded = await fetch(url(`/v1/${project}/auth/sign-up/email`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${guest}` },
+      body: JSON.stringify({ email: `kept-${Date.now()}@x.com`, password: "supersecret1", name: "Kept" }),
+    });
+    expect(upgraded.status).toBe(200);
+    const account = upgraded.headers.get("set-auth-token")!;
+    const orders = (await (await fetch(url(`/v1/projects/${pid}/commerce/orders`), { headers: { Authorization: `Bearer ${account}` } })).json()) as { orders: { status: string }[] };
+    expect(orders.orders).toHaveLength(1); // the guest's paid order came along
+    expect(orders.orders[0]!.status).toBe("paid");
+    const wish = (await (await fetch(url(`/v1/projects/${pid}/wishlist`), { headers: { Authorization: `Bearer ${account}` } })).json()) as { results: unknown[] };
+    expect(wish.results).toHaveLength(1); // so did the wishlist
+  }, 30_000);
+});
+
 describe("localized page variants (cms/localization.md §2)", () => {
   it("pages/{slug}?locale resolves slug@locale through the chain; base is terminal", async () => {
     const cookie = await signUp("pagewright");

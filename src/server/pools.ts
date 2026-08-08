@@ -49,6 +49,46 @@ export async function projectPool(projectId: string): Promise<AuthPool | null> {
               }) satisfies PoolEmailSender,
             }
           : {}),
+        // Guest → account upgrade (commerce.md §3a.3): re-parent every
+        // principal-keyed row the guest accumulated — cart, orders,
+        // wishlist (and any owner-scoped JIT rows), entitlement grants,
+        // the billing customer mapping. An upgrade that orphaned a paid
+        // order would fail the spec's conformance clause.
+        onLinkAccount: async ({ anonymousUserId, newUserId }) => {
+          const from = `pool:${projectId}:${anonymousUserId}`;
+          const to = `pool:${projectId}:${newUserId}`;
+          const scope = `projects/${projectId}`;
+          const { commerceTables } = await import("hono-aep-commerce");
+          const { billingTables } = await import("hono-aep-billing");
+          const { jsonRows } = await import("hono-aep-drizzle");
+          const { and, eq: equals } = await import("drizzle-orm");
+          const udb = db as unknown as {
+            update(t: unknown): { set(v: unknown): { where(w: unknown): Promise<unknown> } };
+            select(): { from(t: unknown): { where(w: unknown): Promise<unknown[]> } };
+          };
+          const cartCols = commerceTables.cart as unknown as Record<"scope" | "customer", never>;
+          const orderCols = commerceTables.order as unknown as Record<"scope" | "customer", never>;
+          await udb.update(commerceTables.cart).set({ customer: to }).where(and(equals(cartCols.scope, scope), equals(cartCols.customer, from)));
+          await udb.update(commerceTables.order).set({ customer: to }).where(and(equals(orderCols.scope, scope), equals(orderCols.customer, from)));
+          const grantCols = billingTables.entitlementGrant as unknown as Record<"principal", never>;
+          await udb.update(billingTables.entitlementGrant).set({ principal: to }).where(equals(grantCols.principal, from));
+          const customerCols = billingTables.billingCustomer as unknown as Record<"principal", never>;
+          await udb.update(billingTables.billingCustomer).set({ principal: to }).where(equals(customerCols.principal, from));
+          // Owner-scoped JIT rows (wishlist et al): rewrite data.created_by.
+          const rowCols = jsonRows as unknown as Record<"scope", never>;
+          const rows = (await udb.select().from(jsonRows).where(equals(rowCols.scope, scope))) as {
+            collection: string; parent: string; id: string; data: Record<string, unknown>;
+          }[];
+          for (const row of rows) {
+            if (row.data?.["created_by"] === from) {
+              const idCols = jsonRows as unknown as Record<"scope" | "collection" | "parent" | "id", never>;
+              await udb
+                .update(jsonRows)
+                .set({ data: { ...row.data, created_by: to } })
+                .where(and(equals(idCols.scope, scope), equals(idCols.collection, row.collection), equals(idCols.parent, row.parent), equals(idCols.id, row.id)));
+            }
+          }
+        },
         env: process.env,
       })
     : null;

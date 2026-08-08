@@ -43,6 +43,15 @@ project.
    (jobs, providers, report cards). change-email + verified-delete are
    the remaining lifecycle flows.
 
+8. **Anonymous principals (guest sessions)** — `POST
+   sign-in/anonymous` mints a real bearer session for a user tagged
+   `is_anonymous`; owner-scoped surfaces (carts, orders, wishlists —
+   commerce.md §3a) work unchanged. Signing up/in while HOLDING the
+   anonymous session fires the pool's `onLinkAccount` seam, and the
+   platform re-parents the guest's rows to the new principal. Config
+   knob `anonymous: {enabled}`; the seam is the baas's, so what gets
+   re-parented is an application decision, not better-auth's.
+
 ### 1a. Static-origin sessions — IMPLEMENTED
 
 Pool sessions work from cross-origin static frontends via BEARER tokens

@@ -139,6 +139,34 @@ machinery collections/forms already use. The app supplies handlers for
 NOTHING here; a consumer that needs bespoke logic (tax by region, say)
 adds it in its own thin server (collections.md §4), never hosted.
 
+### 3a. Guest checkout
+
+A guest is not a special case of commerce — a guest is an ANONYMOUS
+PRINCIPAL (auth-pools.md §1.8). The storefront calls
+`POST auth/sign-in/anonymous` (one button, no form) and receives a
+bearer session like any other; every flow above then works UNCHANGED,
+because carts, orders, and wishlists are owner-scoped to principals, not
+to "accounts". Consequences, all by construction rather than by code:
+
+1. **No parallel guest-cart machinery.** The cart table, the checkout
+   verb, the payment→order bridge, inventory, and coupons are identical
+   for guests — commerce cannot even distinguish them.
+2. **The provider collects the contact point.** Hosted checkout (Stripe)
+   asks for the guest's email; the order confirmation reaches them
+   without the pool ever holding a real address.
+3. **Upgrade carries the history.** When a guest signs up (or in) while
+   holding their anonymous session, the pool's link hook fires and the
+   platform RE-PARENTS the guest's rows — cart, orders, wishlist,
+   entitlement grants, customer mapping — to the new principal. A guest
+   who buys and registers a week later keeps what they bought.
+4. **Anonymous principals are policy-visible.** `authenticated` admits
+   them (they hold a session); an app that wants member-only surfaces
+   uses entitlements or roles, not "has an account".
+
+Conformance addition: a deployment enabling guest checkout MUST enable
+the pool's anonymous knob and SHOULD wire the link hook's re-parenting —
+an upgrade that silently orphans a guest's paid orders fails §3a.3.
+
 ## 4. Analytics (the PostHog use case)
 
 The event stream feeds observability wide events; the canonical funnel
