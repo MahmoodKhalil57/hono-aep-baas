@@ -3,7 +3,37 @@
     "flags": {
       "advanced-export": {
         "defaultValue": false,
-        "description": "The premium CSV/JSON export UI — pro plans only.",
+        "description": "The premium CSV/JSON export UI \u2014 pro plans only.",
+        "rules": [
+          {
+            "value": true,
+            "when": {
+              "entitlement": [
+                "pro"
+              ]
+            }
+          }
+        ],
+        "type": "boolean"
+      },
+      "owns-lifetime": {
+        "defaultValue": false,
+        "description": "The signed-in user owns Lifetime.",
+        "rules": [
+          {
+            "value": true,
+            "when": {
+              "entitlement": [
+                "lifetime"
+              ]
+            }
+          }
+        ],
+        "type": "boolean"
+      },
+      "owns-pro": {
+        "defaultValue": false,
+        "description": "The signed-in user owns Pro.",
         "rules": [
           {
             "value": true,

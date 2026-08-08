@@ -1,19 +1,34 @@
 {
   "config": {
     "entitlements": {
-      "pro": "Full access to premium collections and higher quotas."
+      "lifetime": "Pro, forever, plus all future templates.",
+      "pro": "The full source, the white-label admin, and every hosted kind."
     },
     "products": {
+      "lifetime": {
+        "grants": [
+          "pro",
+          "lifetime"
+        ],
+        "name": "saastarter2 Lifetime",
+        "prices": {
+          "once": {
+            "amountCents": 14900,
+            "currency": "usd",
+            "interval": "one-time"
+          }
+        }
+      },
       "pro": {
         "grants": [
           "pro"
         ],
-        "name": "Pro",
+        "name": "saastarter2 Pro",
         "prices": {
-          "monthly": {
-            "amountCents": 900,
+          "once": {
+            "amountCents": 4900,
             "currency": "usd",
-            "interval": "month"
+            "interval": "one-time"
           }
         }
       }
