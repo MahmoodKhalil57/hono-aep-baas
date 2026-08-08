@@ -270,6 +270,108 @@ export async function pull(context: SyncContext): Promise<{ written: string[] }>
   return { written };
 }
 
+/**
+ * Reified artifacts (baas/site.md §2): discovery + PWA files written into
+ * the STATIC site's public/ from the declared content — sitemap, robots,
+ * llms.txt, and the web app manifest (buildManifest over site config +
+ * theme tokens), base-path aware for GitHub Pages. Icons/screenshots are
+ * referenced, not generated — ship them in public/; the service worker
+ * and per-page .md mirrors are the tier's remaining pieces.
+ */
+export async function artifacts(
+  context: SyncContext,
+  options: { out: string; base?: string },
+): Promise<{ written: string[] }> {
+  const { buildManifest, parseThemeCss } = (await import("hono-aep-cms")) as unknown as {
+    buildManifest: (site: Json, themes: unknown[], pages: Json[]) => Json;
+    parseThemeCss: (name: string, css: string) => unknown;
+  };
+  const manifest = loadManifest(context.dir);
+  const call = api(context, manifest);
+  const written: string[] = [];
+  const base = (options.base ?? "").replace(/\/$/, "");
+
+  const projectResponse = await call("GET", `projects/${manifest.project}`);
+  if (!projectResponse.ok) {
+    throw new Error(`GET projects/${manifest.project} → ${projectResponse.status} (artifacts need your sk_ key)`);
+  }
+  const project = (await projectResponse.json()) as Json & { display_name?: string; site?: Json };
+  const site = (project.site ?? {}) as Json;
+  const url = String(site["url"] ?? "").replace(/\/$/, "");
+  if (!url) {
+    throw new Error("artifacts: project.site.url is required (set it in project.cms.json and push)");
+  }
+  const name = String(site["name"] ?? project.display_name ?? manifest.project);
+
+  const pagesResponse = await call("GET", `projects/${manifest.project}/pages?max_page_size=1000`);
+  const pageRows = pagesResponse.ok
+    ? ((await pagesResponse.json()) as { results: (Json & { path: string; title: string })[] }).results
+    : [];
+  const pages = pageRows.map((row) => ({
+    slug: row.path.split("/").pop()!,
+    title: row.title,
+    data: row["data"],
+  }));
+
+  const themesResponse = await call("GET", `projects/${manifest.project}/themes?max_page_size=1000`);
+  const themeRows = themesResponse.ok
+    ? ((await themesResponse.json()) as { results: (Json & { path: string; css: string })[] }).results
+    : [];
+  const themes = themeRows.map((row) => parseThemeCss(row.path.split("/").pop()!, row.css));
+
+  const write = (file: string, content: string): void => {
+    const target = join(options.out, file);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content);
+    written.push(file);
+  };
+
+  // The web app manifest — installable off a static host (site.md §2a:
+  // the base path feeds id/start_url/scope on project pages).
+  const webManifest = buildManifest(
+    { name, url, locale: String(site["locale"] ?? "en"), description: site["description"], app: site["app"] } as Json,
+    themes,
+    pages as Json[],
+  ) as Json;
+  webManifest["id"] = `${base}/`;
+  webManifest["start_url"] = `${base}/`;
+  webManifest["scope"] = `${base}/`;
+  write("manifest.webmanifest", `${JSON.stringify(webManifest, null, 2)}
+`);
+
+  const pageUrl = (slug: string): string => `${url}${base}/${slug === "home" ? "" : slug}`;
+  const urls = [`${url}${base}/`, ...pages.filter((page) => page.slug !== "home").map((page) => pageUrl(page.slug))];
+  write(
+    "sitemap.xml",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls
+      .map((loc) => `  <url><loc>${loc}</loc></url>`)
+      .join("\n")}
+</urlset>
+`,
+  );
+  write("robots.txt", `User-agent: *
+Allow: /
+
+Sitemap: ${url}${base}/sitemap.xml
+`);
+  write(
+    "llms.txt",
+    `# ${name}
+${site["description"] ? `
+> ${site["description"]}
+` : ""}
+## Pages
+${[
+      `- [Home](${url}${base}/)`,
+      ...pages.filter((page) => page.slug !== "home").map((page) => `- [${page.title}](${pageUrl(page.slug)})`),
+    ].join("\n")}
+`,
+  );
+  return { written };
+}
+
 /** Canonical reprint of the local files (the round-trip gate). */
 export function fmt(context: SyncContext): { formatted: string[] } {
   const manifest = loadManifest(context.dir);
@@ -328,13 +430,27 @@ if (import.meta.main) {
       for (const file of result.written) console.log(`wrote ${file}`);
       break;
     }
+    case "artifacts": {
+      const outIndex = process.argv.indexOf("--out");
+      const baseIndex = process.argv.indexOf("--base");
+      if (outIndex < 0) {
+        console.error("artifacts requires --out <public-dir> (and optionally --base /repo)");
+        process.exit(1);
+      }
+      const result = await artifacts(context, {
+        out: process.argv[outIndex + 1]!,
+        ...(baseIndex >= 0 ? { base: process.argv[baseIndex + 1]! } : {}),
+      });
+      for (const file of result.written) console.log(`wrote ${file}`);
+      break;
+    }
     case "fmt": {
       const result = fmt(context);
       console.log(result.formatted.length ? result.formatted.join("\n") : "already canonical");
       break;
     }
     default:
-      console.error("usage: sync <diff|push|pull|fmt> --dir <config-dir> [--prune] [--exit-code]");
+      console.error("usage: sync <diff|push|pull|fmt|artifacts> --dir <config-dir> [--prune] [--exit-code] [--out <dir> --base /repo]");
       process.exit(1);
   }
 }

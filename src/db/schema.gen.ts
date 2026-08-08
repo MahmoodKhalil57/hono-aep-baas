@@ -6,6 +6,7 @@ import { index, sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
   display_name: text("display_name").notNull(),
+  site: text("site", { mode: "json" }),
   created_by: text("created_by"),
   create_time: text("create_time").notNull(),
   update_time: text("update_time").notNull(),

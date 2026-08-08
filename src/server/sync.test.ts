@@ -154,3 +154,63 @@ describe("sync: .cms.css documents (themes)", () => {
     expect(again.applied).toBe(0);
   }, 30_000);
 });
+
+describe("sync artifacts (site.md §2 reification)", () => {
+  it("writes manifest/sitemap/robots/llms from the declared content, base-path aware", async () => {
+    const { artifacts } = await import("../../bin/sync");
+    const context = { dir, key };
+    // Declare the site config + a page + keep the theme from the css test.
+    writeFileSync(
+      join(dir, "project.cms.json"),
+      canonical({
+        display_name: "richPetShop 2",
+        site: {
+          url: "https://example.github.io",
+          description: "The reference consumer.",
+          locale: "en",
+          app: { shortName: "RPS2" },
+        },
+      }),
+    );
+    await push(context);
+    const server2 = server.origin;
+    const applied = await fetch(`${server2}/v1/projects/richpetshop2/pages/pricing`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        title: "Pricing",
+        data: { content: [{ type: "Markdown", props: { id: "m", body: "# Plans" } }] },
+      }),
+    });
+    expect(applied.status).toBe(201);
+
+    const out = join(dir, "public-out");
+    const result = await artifacts(context, { out, base: "/saastarter2" });
+    expect(result.written.sort()).toEqual(
+      ["llms.txt", "manifest.webmanifest", "robots.txt", "sitemap.xml"].sort(),
+    );
+
+    const webManifest = JSON.parse(readFileSync(join(out, "manifest.webmanifest"), "utf8")) as {
+      name: string;
+      short_name: string;
+      start_url: string;
+      scope: string;
+      theme_color: string;
+    };
+    expect(webManifest.name).toBe("richPetShop 2");
+    expect(webManifest.short_name).toBe("RPS2");
+    expect(webManifest.start_url).toBe("/saastarter2/"); // Pages base path
+    expect(webManifest.scope).toBe("/saastarter2/");
+    expect(webManifest.theme_color).toBeTruthy(); // from the synced theme's tokens
+
+    const sitemap = readFileSync(join(out, "sitemap.xml"), "utf8");
+    expect(sitemap).toContain("https://example.github.io/saastarter2/</loc>");
+    expect(sitemap).toContain("https://example.github.io/saastarter2/pricing</loc>");
+    expect(readFileSync(join(out, "robots.txt"), "utf8")).toContain(
+      "Sitemap: https://example.github.io/saastarter2/sitemap.xml",
+    );
+    const llms = readFileSync(join(out, "llms.txt"), "utf8");
+    expect(llms).toContain("# richPetShop 2");
+    expect(llms).toContain("[Pricing](https://example.github.io/saastarter2/pricing)");
+  }, 30_000);
+});

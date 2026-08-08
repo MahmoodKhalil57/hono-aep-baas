@@ -32,7 +32,11 @@ Puck pages (the "if the user wants a cms for some pages" tier — pages
 are optional; a consumer can ship pure code routes and use none of
 this).
 
-## 2. PWA + SEO/AEO for a static SPA
+## 2. PWA + SEO/AEO for a static SPA — reification IMPLEMENTED
+(`sync artifacts --out <public> --base /repo`: manifest.webmanifest
+(buildManifest over site config + theme tokens, base-path'd id/
+start_url/scope), sitemap.xml, robots.txt, llms.txt. Remaining: the
+service worker, per-page .md mirrors, icon generation, prerender.)
 
 A static SPA can't server-render its head or serve dynamic app
 artifacts — the suite's answer splits in two, both from the declared

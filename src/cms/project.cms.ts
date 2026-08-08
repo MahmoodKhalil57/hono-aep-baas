@@ -10,6 +10,10 @@ export const projectCms = cmsResource({
     display_name: z.string().min(1).max(120).meta({
       description: "The project's name.",
     }),
+    site: z.record(z.string(), z.any()).optional().meta({
+      description:
+        "Site config for the consumer frontend (baas/site.md §2): {url, description?, locale?, name?, app?{shortName,display,shortcuts,…}} — feeds the reified sitemap/robots/llms/manifest artifacts.",
+    }),
     created_by: z.string().optional().meta({
       description: "The owning principal (set by the server, never the client).",
     }),
