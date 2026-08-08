@@ -244,14 +244,35 @@ export function createHandler(): (request: Request) => Promise<Response> {
           (await principalFrom({ req: { raw: request, header: (n: string) => request.headers.get(n) } } as never)) ??
           (await (await import("./pools")).poolPrincipal(segments[3], request.headers));
         if (!principal) return corsify(Response.json({ title: "Sign in to check out." }, { status: 401 }));
-        const bodyJson = (await request.json().catch(() => ({}))) as { product?: string };
+        const bodyJson = (await request.json().catch(() => ({}))) as { product?: string; price?: string };
         const product = String(bodyJson.product ?? "");
-        const result = await billing.grant({
+        const price = String(bodyJson.price ?? "monthly");
+        const origin = `${url.origin}`;
+        const result = await billing.checkout({
           principal: principal.userId,
           product,
-          source: `local:${principal.userId}:${product}`,
+          price,
+          successUrl: `${origin}/v1/projects/${segments[3]}/billing/checkout?ok=1`,
+          cancelUrl: `${origin}/v1/projects/${segments[3]}/billing/checkout?cancel=1`,
         });
-        return corsify(Response.json({ granted: result.granted }));
+        return corsify(Response.json(result));
+      }
+      // Stripe webhooks: Stripe's own signature (not Standard Webhooks) →
+      // billing verifies + grants. Public; the signature is the auth.
+      if (
+        segments[2] === "projects" && segments[3] && segments[4] === "billing" &&
+        segments[5] === "stripe-webhook" && !segments[6] && request.method === "POST"
+      ) {
+        if (!billing) return corsify(Response.json({ title: "No billing." }, { status: 404 }));
+        try {
+          const result = await billing.handleWebhook({
+            signature: request.headers.get("Stripe-Signature"),
+            body: await request.text(),
+          });
+          return corsify(Response.json(result, { status: 202 }));
+        } catch (problem) {
+          return corsify(Response.json({ title: (problem as Error).message }, { status: 401 }));
+        }
       }
       // Inbound webhooks (connections consumer): signed third-party
       // events (Stripe, …) verified then handed to jobs — NEVER inline.

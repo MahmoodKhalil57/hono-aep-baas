@@ -17,9 +17,15 @@
           }
         }
       }
+    },
+    "secretKey": {
+      "$env": "STRIPE_SECRET_KEY"
+    },
+    "webhookSecret": {
+      "$env": "STRIPE_WEBHOOK_SECRET"
     }
   },
-  "description": "Entitlements-core billing (local provider): the `pro` product grants the `pro` entitlement. Swap provider to stripe + secretKey/webhookSecret to take real payments; grants then arrive via the inbound Stripe webhook (services/stripe.cms.json).",
+  "description": "Stripe billing (test mode): the pro product grants the pro entitlement on a paid Checkout Session; webhook verified by Stripe signature \u2192 billing.applyEvent.",
   "kind": "billing",
-  "provider": "local"
+  "provider": "stripe"
 }
