@@ -31,6 +31,19 @@
             "interval": "one-time"
           }
         }
+      },
+      "pro-monthly": {
+        "grants": [
+          "pro"
+        ],
+        "name": "saastarter2 Pro (monthly)",
+        "prices": {
+          "monthly": {
+            "amountCents": 900,
+            "currency": "usd",
+            "interval": "month"
+          }
+        }
       }
     }
   },
