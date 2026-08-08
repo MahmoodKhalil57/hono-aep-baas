@@ -17,15 +17,9 @@
           }
         }
       }
-    },
-    "secretKey": {
-      "$env": "STRIPE_SECRET_KEY"
-    },
-    "webhookSecret": {
-      "$env": "STRIPE_WEBHOOK_SECRET"
     }
   },
-  "description": "Stripe billing (test mode): the pro product grants the pro entitlement on a paid Checkout Session; webhook verified by Stripe signature \u2192 billing.applyEvent.",
+  "description": "Entitlements-core billing (local provider \u2014 repo default, testable). Deployers flip provider to stripe + secretKey/webhookSecret EnvRefs for real payments (the live mizan-gpp Worker runs stripe).",
   "kind": "billing",
-  "provider": "stripe"
+  "provider": "local"
 }
