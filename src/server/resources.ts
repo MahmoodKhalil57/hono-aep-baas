@@ -179,7 +179,11 @@ async function validateDefinition(
     throw invalidDefinition("nested JIT collections are not supported yet (top-level only).");
   }
   try {
-    resourceFromDocument(definition); // the JIT gate: schema/policies/owner
+    // The FULL serving pipeline is the gate: resourceFromDocument alone
+    // misses defineResource's own invariants (kebab-case names per
+    // AEP-122, …), and a definition that only fails at serve time would
+    // poison the whole project's JIT app on every request.
+    defineResource({ ...composable(resourceFromDocument(definition)) });
   } catch (problem) {
     throw invalidDefinition(problem instanceof Error ? problem.message : String(problem));
   }

@@ -508,6 +508,28 @@ describe("lexical search over collections (search kind, AEP-136)", () => {
   }, 30_000);
 });
 
+describe("definition gate = the full serving pipeline (AEP-122 poison guard)", () => {
+  it("rejects a snake_case singular at apply time; a poisoned row cannot break siblings", async () => {
+    const cookie = await signUp("gatekeeper");
+    const project = await makeProject(cookie, "Gate");
+    // Apply-time rejection: defineResource's kebab-case invariant fires at PUT.
+    const bad = await fetch(url(`/v1/${project}/collections/wishlist`), {
+      method: "PUT", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ definition: { singular: "wishlist_item", plural: "wishlist", fields: [{ name: "product", type: "string", required: true }] } }),
+    });
+    expect(bad.status).toBe(400);
+    expect(((await bad.json()) as { detail: string }).detail).toContain("kebab-case");
+    // Kebab-case version applies, and siblings keep working.
+    const good = await fetch(url(`/v1/${project}/collections/wishlist`), {
+      method: "PUT", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ definition: { singular: "wishlist-item", plural: "wishlist", fields: [{ name: "product", type: "string", required: true }, { name: "created_by", type: "string" }], policy_create: "authenticated", policy_list: { owner: { field: "created_by" } }, policy_get: { owner: { field: "created_by" } }, policy_update: { owner: { field: "created_by" } }, policy_delete: { owner: { field: "created_by" } }, owner: "created_by" } }),
+    });
+    expect(good.status).toBe(201);
+    const list = await fetch(url(`/v1/${project}/wishlist`), { headers: { Cookie: cookie } });
+    expect(list.status).toBe(200);
+  }, 30_000);
+});
+
 describe("commerce cart→checkout (baas/commerce.md)", () => {
   it("a pool user adds a product to cart and checks out to a pending order", async () => {
     const cookie = await signUp("merchant");

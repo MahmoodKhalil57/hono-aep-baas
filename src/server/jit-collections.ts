@@ -62,9 +62,21 @@ export async function jitProjectApp(
     cache.set(projectId, null);
     return null;
   }
-  const resources = docs.map((doc) =>
-    defineResource({ ...composable(resourceFromDocument(doc.definition as Json)) }),
-  );
+  // Resilience: one unbuildable definition (e.g. a row written before the
+  // apply-gate ran the full pipeline) must NOT poison the project — every
+  // sibling collection would 500 on every request. Skip it and log.
+  const resources = docs.flatMap((doc) => {
+    try {
+      return [defineResource({ ...composable(resourceFromDocument(doc.definition as Json)) })];
+    } catch (problem) {
+      console.error(`jit: skipping collections/${doc.id} of ${projectId}:`, (problem as Error).message);
+      return [];
+    }
+  });
+  if (resources.length === 0) {
+    cache.set(projectId, null);
+    return null;
+  }
   const sink = projectSink(projectId);
   const app = aepApp({
     resources,
