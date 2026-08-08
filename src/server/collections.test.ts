@@ -457,3 +457,53 @@ describe("inbound webhooks route (connections consumer)", () => {
     expect(((await response.json()) as { title: string }).title).toContain("inbound connection");
   }, 30_000);
 });
+
+describe("lexical search over collections (search kind, AEP-136)", () => {
+  it("indexes on write, ranks :search by coverage, hydrates through read policy", async () => {
+    const cookie = await signUp("searcher");
+    const project = await makeProject(cookie, "Searchable");
+    await fetch(url(`/v1/${project}/collections/blog`), {
+      method: "PUT",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({
+        definition: {
+          singular: "post",
+          plural: "posts",
+          fields: [{ name: "title", type: "string", required: true }, { name: "body", type: "string" }],
+          policy_create: "authenticated",
+        },
+      }),
+    });
+    const post = (id: string, title: string, body: string) =>
+      fetch(url(`/v1/${project}/posts?id=${id}`), {
+        method: "POST",
+        headers: { ...json, Cookie: cookie },
+        body: JSON.stringify({ title, body }),
+      });
+    await post("a", "Machine learning basics", "An intro to ML models");
+    await post("b", "Deep learning networks", "Neural nets and learning");
+    await post("c", "Sourdough bread", "Baking at home");
+
+    const results = (await (
+      await fetch(url(`/v1/${project}/posts:search`), {
+        method: "POST",
+        headers: json,
+        body: JSON.stringify({ query: "machine learning" }),
+      })
+    ).json()) as { results: { path: string; _score: number }[] };
+    // 'a' has both terms → first; 'b' has "learning" → second; 'c' absent.
+    expect(results.results.map((r) => r.path.split("/").pop())).toEqual(["a", "b"]);
+    expect(results.results[0]!._score).toBeGreaterThan(results.results[1]!._score);
+
+    // Delete drops it from the index.
+    await fetch(url(`/v1/${project}/posts/a`), { method: "DELETE", headers: { Cookie: cookie } });
+    const after = (await (
+      await fetch(url(`/v1/${project}/posts:search`), {
+        method: "POST",
+        headers: json,
+        body: JSON.stringify({ query: "machine learning" }),
+      })
+    ).json()) as { results: { path: string }[] };
+    expect(after.results.map((r) => r.path.split("/").pop())).toEqual(["b"]);
+  }, 30_000);
+});

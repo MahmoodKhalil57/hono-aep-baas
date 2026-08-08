@@ -6,6 +6,8 @@ import { db } from "../db/registry";
 import { collections } from "../db/schema";
 import { eventSink, principalFrom } from "./services";
 import { poolPrincipal } from "./pools";
+import { search } from "./services";
+import { extractText } from "hono-aep-search";
 
 /**
  * The JIT dispatcher (baas/collections.md §0-1): every project's declared
@@ -24,9 +26,20 @@ export const invalidateProject = (projectId: string): void => {
 };
 
 const projectSink = (projectId: string) => {
-  const sink = eventSink;
-  if (!sink) return undefined;
+  const sink = eventSink ?? (async () => {});
   return async (envelope: EventEnvelope): Promise<void> => {
+    // Search index (derived state): the collection's rows are indexed on
+    // write and removed on delete — scoped by project. The reindex-from-
+    // storage job is the rebuild path (spec: the index is rebuildable).
+    if (search) {
+      const [collection, id] = envelope.path.split("/");
+      const verb = envelope.type.split(".").pop();
+      if (collection && id) {
+        if (verb === "delete") await search.remove({ scope: `projects/${projectId}`, collection, id });
+        else if (envelope.data)
+          await search.index({ scope: `projects/${projectId}`, collection, id, text: extractText(envelope.data) });
+      }
+    }
     await sink({
       ...envelope,
       path: `projects/${projectId}/${envelope.path}`,

@@ -9,6 +9,7 @@ import {
 import { createConnectionsConsumer, registerConnectionsKind, type ConnectionsConsumer } from "hono-aep-connections";
 import { createBilling, registerBillingKind, type Billing } from "hono-aep-billing";
 import { createFlags, registerFlagsKind, type Flags } from "hono-aep-flags";
+import { createSearch, registerSearchKind, type Search } from "hono-aep-search";
 import { composeSinks, type EventSink } from "hono-aep";
 import { keyPrincipal, type Principal } from "hono-aep-auth";
 import { db } from "../db/registry";
@@ -21,6 +22,7 @@ registerNotificationsKind();
 registerConnectionsKind();
 registerBillingKind();
 registerFlagsKind();
+registerSearchKind();
 
 const appRoot = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 export const instances: ServiceInstance[] = readServices(appRoot);
@@ -93,4 +95,9 @@ export async function withEntitlements(principal: Principal | null): Promise<Pri
 export const flags: Flags | null = (() => {
   const instance = resolveInstance(instances, "flags");
   return instance ? createFlags({ instance }) : null;
+})();
+
+export const search: Search | null = (() => {
+  const instance = resolveInstance(instances, "search");
+  return instance ? createSearch({ instance, db }) : null;
 })();

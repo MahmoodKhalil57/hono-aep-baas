@@ -17,6 +17,8 @@ export { jsonRows } from "hono-aep-drizzle";
 import { jsonRowsTables } from "hono-aep-drizzle";
 export { entitlementGrant } from "hono-aep-billing";
 import { billingTables } from "hono-aep-billing";
+export { searchDocument } from "hono-aep-search";
+import { searchTables } from "hono-aep-search";
 
 export const tables = {
   ...generatedTables,
@@ -24,6 +26,7 @@ export const tables = {
   ...notificationTables,
   ...jsonRowsTables,
   ...billingTables,
+  ...searchTables,
   ...apiKeyTables,
   ...poolTables,
   ...authTables,

@@ -1,0 +1,10 @@
+{
+  "config": {
+    "embeddings": {
+      "provider": "none"
+    }
+  },
+  "description": "Lexical search over collection rows (local provider): AEP-136 POST /{plural}:search, ranked by term coverage. Set embeddings.provider to workers-ai/openai for semantic + hybrid ranking (behind the seam).",
+  "kind": "search",
+  "provider": "local"
+}

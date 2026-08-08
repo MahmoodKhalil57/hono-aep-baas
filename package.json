@@ -24,6 +24,7 @@
     "hono-aep-flags": "file:../customPackages/hono-aep-flags",
     "hono-aep-jobs": "file:../customPackages/hono-aep-jobs",
     "hono-aep-notifications": "file:../customPackages/hono-aep-notifications",
+    "hono-aep-search": "file:../customPackages/hono-aep-search",
     "zod": "^4.3.11"
   },
   "devDependencies": {

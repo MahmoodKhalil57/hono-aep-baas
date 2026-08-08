@@ -1,6 +1,6 @@
 import "../db"; // opens SQLite and installs the seam
 import { eq } from "drizzle-orm";
-import { aepApp, attachMcp, openApiDocument } from "hono-aep";
+import { aepApp, attachMcp, openApiDocument, type Json } from "hono-aep";
 import { createApiKey, keyPrincipal } from "hono-aep-auth";
 import { createHealthProbes } from "hono-aep-observability";
 import { parseThemeCss, renderThemeCss } from "hono-aep-cms";
@@ -11,7 +11,7 @@ import { drizzleAepStorage } from "hono-aep-drizzle";
 import { block, collection, form, page, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
 import { projectPool } from "./pools";
-import { authn, billing, connectionsConsumer, eventSink, flags, jobs, notifications, principalFrom } from "./services";
+import { authn, billing, connectionsConsumer, eventSink, flags, jobs, notifications, principalFrom, search } from "./services";
 
 /**
  * mizan-gpp — forms-as-a-service (baas/spec/). The whole server: the AEP
@@ -191,6 +191,35 @@ const server = Bun.serve({
       // where {plural} is not a compiled child → the project's declared
       // collections app (live the moment its document is applied).
       const segments = url.pathname.split("/"); // ["", "v1", "projects", p, seg, …]
+      // Lexical search (AEP-136 :search): POST /v1/projects/{p}/{plural}:search
+      // → ranked hits, hydrated through the JIT app so read policies +
+      // owner pushdown still apply (search never leaks unauthorized rows).
+      if (
+        segments[2] === "projects" && segments[3] && segments[4]?.endsWith(":search") &&
+        !segments[5] && request.method === "POST"
+      ) {
+        if (!search) return corsify(Response.json({ title: "No search configured." }, { status: 404 }));
+        const jit = await jitProjectApp(segments[3]);
+        if (!jit) return corsify(Response.json({ title: "No collections declared." }, { status: 404 }));
+        const plural = segments[4].slice(0, -":search".length);
+        const bodyJson = (await request.json().catch(() => ({}))) as { query?: string; limit?: number };
+        const hits = await search.search({
+          scope: `projects/${segments[3]}`,
+          collection: plural,
+          query: String(bodyJson.query ?? ""),
+          ...(bodyJson.limit ? { limit: bodyJson.limit } : {}),
+        });
+        // Hydrate through the JIT app (auth-forwarded) — a hit the caller
+        // may not read simply drops out.
+        const results: Json[] = [];
+        for (const hit of hits) {
+          const row = await jit.app.fetch(
+            new Request(`${url.origin}/${plural}/${hit.id}`, { headers: request.headers }),
+          );
+          if (row.ok) results.push({ ...(await row.json()), _score: hit.score });
+        }
+        return corsify(Response.json({ results }));
+      }
       // Flags (OpenFeature): server-evaluate the whole set against the
       // resolved principal (session/key/pool) so the SPA's first paint
       // carries values — no flash. Entitlement rules compose with billing.
