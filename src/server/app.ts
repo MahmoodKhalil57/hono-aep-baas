@@ -9,7 +9,7 @@ import { fallbackChain, localizationConfigSchema, localizeRow, parseThemeCss, re
 import { contextOf } from "hono-aep-flags";
 import { projectCommerce } from "./commerce";
 import { db } from "../db/registry";
-import { forms, projects, tables, themes } from "../db/schema";
+import { collections, forms, projects, tables, themes } from "../db/schema";
 import { drizzleAepStorage } from "hono-aep-drizzle";
 import { block, collection, form, page, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
@@ -228,6 +228,33 @@ export function createHandler(): (request: Request) => Promise<Response> {
       // where {plural} is not a compiled child → the project's declared
       // collections app (live the moment its document is applied).
       const segments = url.pathname.split("/"); // ["", "v1", "projects", p, seg, …]
+      // Hosted JSON Schemas (sync.md §6 / seed.md §7): every config/seed
+      // file's $schema points here. Static kinds are contract-derived
+      // (collection-config converts the server's own zod validator);
+      // per-project row schemas are generated from the live definition.
+      if (segments[2] === "schemas" && segments[3]?.endsWith(".json") && !segments[4] && request.method === "GET") {
+        const { staticSchema } = await import("./schemas");
+        const schema = staticSchema(segments[3].slice(0, -".json".length), `${url.origin}/v1/schemas`);
+        if (!schema) return corsify(Response.json({ title: "Unknown schema kind." }, { status: 404 }));
+        return corsify(Response.json(schema, { headers: { "Cache-Control": "no-cache" } }));
+      }
+      if (
+        segments[2] === "projects" && segments[3] && segments[4] === "schemas" && segments[5] === "rows" &&
+        segments[6]?.endsWith(".json") && !segments[7] && request.method === "GET"
+      ) {
+        const plural = segments[6].slice(0, -".json".length);
+        const declared = await db.select().from(collections).where(eq(collections.project_id, segments[3]));
+        const match = declared.find((row) => {
+          const definition = row.definition as { plural?: string } | null;
+          return definition?.plural === plural || row.id === plural;
+        });
+        if (!match) return corsify(Response.json({ title: `No collection with plural '${plural}'.` }, { status: 404 }));
+        const { rowsSchema } = await import("./schemas");
+        return corsify(Response.json(
+          rowsSchema(match.definition as Record<string, unknown>, `${url.origin}${url.pathname}`),
+          { headers: { "Cache-Control": "no-cache" } },
+        ));
+      }
       // Lexical search (AEP-136 :search): POST /v1/projects/{p}/{plural}:search
       // → ranked hits, hydrated through the JIT app so read policies +
       // owner pushdown still apply (search never leaks unauthorized rows).

@@ -201,6 +201,34 @@ describe("hosted site assets (/site/{asset})", () => {
     const unmapped = await fetch(url(`/v1/${project}/site/og/unknown/x.png`));
     expect(unmapped.status).toBe(404);
   });
+
+  it("hosts contract-derived JSON Schemas for config + seed files", async () => {
+    const cookie = await signUp("schemas");
+    const project = await makeProject(cookie, "Schema Site");
+    await fetch(url(`/v1/${project}/collections/gizmos`), {
+      method: "PUT",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ definition: { singular: "gizmo", plural: "gizmos", fields: [{ name: "name", type: "string", required: true }, { name: "blurb", type: "string", localized: true }], policy_list: "public", policy_get: "public" } }),
+    });
+
+    // Static kind, derived from the server's own zod validator.
+    const collectionSchema = (await (await fetch(url("/v1/schemas/collection-config.json"))).json()) as Record<string, any>;
+    expect(collectionSchema.$schema).toContain("2020-12");
+    expect(collectionSchema.required).toEqual(["definition"]);
+    expect(collectionSchema.properties.definition.properties.singular.pattern).toBeDefined(); // kebab-case from resourceDocumentSchema
+    expect(collectionSchema.properties.$schema).toBeDefined(); // files may carry the pointer
+
+    for (const kind of ["baas-config", "project-config", "form-config", "seed-config", "seed-user", "seed-lock"]) {
+      expect((await fetch(url(`/v1/schemas/${kind}.json`))).status).toBe(200);
+    }
+    expect((await fetch(url("/v1/schemas/nope.json"))).status).toBe(404);
+
+    // Per-project row schema, generated from the live definition.
+    const rows = (await (await fetch(url(`/v1/${project}/schemas/rows/gizmos.json`))).json()) as Record<string, any>;
+    expect(rows.required).toContain("name");
+    expect(rows.properties.blurb.additionalProperties).toEqual({ type: "string" }); // localized → locale map
+    expect((await fetch(url(`/v1/${project}/schemas/rows/absent.json`))).status).toBe(404);
+  });
 });
 
 describe("hosted collections (JIT)", () => {

@@ -22,6 +22,9 @@ const OUTPUT_ONLY = new Set([
   "state",
   "created_by",
   "submit_key",
+  // Editor-only: every repo file's schema pointer (sync.md §6) — never
+  // part of the wire document, never drift.
+  "$schema",
 ]);
 
 const canonical = (value: unknown): unknown => {

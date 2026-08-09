@@ -22,7 +22,7 @@ type Manifest = {
 type Json = Record<string, unknown>;
 type Lock = { rows: string[] };
 
-const OUTPUT_ONLY = new Set(["path", "create_time", "update_time", "delete_time", "state", "created_by"]);
+const OUTPUT_ONLY = new Set(["path", "create_time", "update_time", "delete_time", "state", "created_by", "$schema"]);
 
 const canonical = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonical);
@@ -98,7 +98,7 @@ const loadRows = (dir: string, manifest: Manifest): RowFile[] => {
     }
     for (const name of names.sort()) {
       const file = `${plural}/${name}`;
-      const body = JSON.parse(readFileSync(join(dir, file), "utf8")) as Json;
+      const body = stripOutputOnly(JSON.parse(readFileSync(join(dir, file), "utf8")) as Json);
       assertDataPlane(file, body);
       rows.push({ file, plural, slug: name.slice(0, -".json".length), body, ...(as ? { as } : {}) });
     }
