@@ -49,3 +49,4 @@ console.log(
 for (const artifact of result.outputs.filter((a) => a.size > 200_000)) {
   console.log(`  ${(artifact.size / 1024).toFixed(0)} KB  ${artifact.path.split("/").pop()}`);
 }
+await import(new URL("./vendor-bootstrap-ui.ts", import.meta.url).pathname);

@@ -100,6 +100,59 @@ describe("hosted developer studio", () => {
   });
 });
 
+describe("hosted site assets (/site/{asset})", () => {
+  it("serves generated admin/manifest/robots/sw/sitemap/llms from config + public data", async () => {
+    const cookie = await signUp("site-assets");
+    const project = await makeProject(cookie, "Asset Site");
+
+    await fetch(url(`/v1/${project}`), {
+      method: "PATCH",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({
+        site: {
+          url: "https://shop.example",
+          description: "A tiny shop.",
+          app: { shortName: "Shop", themeColor: "#123456" },
+          admin: { collections: ["items"] },
+          assets: {
+            robots: { extra: ["Disallow: /admin.html"] },
+            sitemap: { urls: ["/", "/items.html"], collections: [{ slug: "items", url: "/item.html?id={id}" }] },
+            llms: { sections: [{ title: "Items", collection: "items", url: "/item.html?id={id}", label: "name" }] },
+          },
+        },
+      }),
+    });
+    await fetch(url(`/v1/${project}/collections/items`), {
+      method: "PUT",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ definition: { singular: "item", plural: "items", fields: [{ name: "name", type: "string", required: true }], policy_create: "authenticated", policy_list: "public", policy_get: "public" } }),
+    });
+    await fetch(url(`/v1/${project}/items?id=widget`), {
+      method: "POST",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ name: "Widget" }),
+    });
+
+    const get = (asset: string) => fetch(url(`/v1/${project}/site/${asset}`));
+    const adminPage = await (await get("admin.html")).text();
+    expect(adminPage).toContain("./bootstrap-ui.js"); // dogfoods the renderer module next door
+    expect((await (await get("bootstrap-ui.js")).text())).toContain("adminModelFromDocument");
+    const manifest = (await (await get("manifest.webmanifest")).json()) as Record<string, unknown>;
+    expect(manifest.short_name).toBe("Shop");
+    expect(manifest.theme_color).toBe("#123456");
+    const robots = await (await get("robots.txt")).text();
+    expect(robots).toContain("Disallow: /admin.html");
+    expect(robots).toContain("Sitemap: https://shop.example/sitemap.xml");
+    expect(await (await get("sw.js")).text()).toContain("network-first");
+    const sitemap = await (await get("sitemap.xml")).text();
+    expect(sitemap).toContain("<loc>https://shop.example/items.html</loc>");
+    expect(sitemap).toContain("<loc>https://shop.example/item.html?id=widget</loc>"); // public row
+    const llms = await (await get("llms.txt")).text();
+    expect(llms).toContain("# Asset Site");
+    expect(llms).toContain("[Widget](https://shop.example/item.html?id=widget)");
+  });
+});
+
 describe("hosted collections (JIT)", () => {
   it("apply a definition → the resource is live: CRUD, policy, transition, filter", async () => {
     const cookie = await signUp("author");

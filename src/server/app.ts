@@ -697,6 +697,51 @@ export function createHandler(): (request: Request) => Promise<Response> {
           }),
         );
       }
+      // Hosted site assets (baas/site.md §2): admin.html + bootstrap-ui.js
+      // + manifest/robots/sitemap/llms/sw, generated from the project doc
+      // (site.*) and PUBLIC collection reads (an anonymous internal fetch,
+      // so list policies gate exactly what a crawler could see anyway).
+      // Frontends may self-host instead; origin-bound assets (robots, sw)
+      // are copied at publish time.
+      if (segments[2] === "projects" && segments[3] && segments[4] === "site" && segments[5] && !segments[6] && request.method === "GET") {
+        const pid = segments[3];
+        const asset = segments[5];
+        const { adminHtml, bootstrapUiJs, llmsTxt, manifestJson, robotsTxt, sitemapXml, swJs } = await import("./site-assets");
+        const text = (body: string, type: string) =>
+          corsify(new Response(body, { headers: { "Content-Type": type, "Cache-Control": "no-cache" } }));
+        if (asset === "admin.html") return text(adminHtml(), "text/html;charset=utf-8");
+        if (asset === "bootstrap-ui.js") return text(bootstrapUiJs(), "text/javascript;charset=utf-8");
+        const projectRows = await db.select().from(projects).where(eq(projects.id, pid)).limit(1);
+        if (!projectRows[0]) return corsify(Response.json({ title: "No such project." }, { status: 404 }));
+        const site = (projectRows[0].site ?? {}) as import("./site-assets").SiteDoc;
+        const displayName = projectRows[0].display_name ?? pid;
+        if (asset === "manifest.webmanifest")
+          return text(JSON.stringify(manifestJson(displayName, site), null, 2), "application/manifest+json");
+        if (asset === "robots.txt") return text(robotsTxt(site, `${url.origin}/v1/projects/${pid}/site`), "text/plain;charset=utf-8");
+        if (asset === "sw.js") return text(swJs(site), "text/javascript;charset=utf-8");
+        if (asset === "llms.txt" || asset === "sitemap.xml") {
+          const defaultLocale = site.locales?.default ?? "en";
+          const fetchPublic = async (plural: string): Promise<Record<string, unknown>[]> => {
+            const synth = new URL(`${url.origin}/v1/projects/${pid}/${plural}?locale=${defaultLocale}&max_page_size=200`);
+            let response: Response;
+            if (plural === "pages") {
+              response = await aep.app.fetch(new Request(`${url.origin}/projects/${pid}/pages`));
+            } else {
+              const jit = await jitProjectApp(pid);
+              if (!jit) return [];
+              const { localizedJitFetch } = await import("./localize");
+              response = await localizedJitFetch(jit, new Request(synth), synth, `/${plural}`);
+            }
+            if (!response.ok) return [];
+            return ((await response.json()) as { results?: Record<string, unknown>[] }).results ?? [];
+          };
+          if (asset === "llms.txt") return text(await llmsTxt(displayName, site, fetchPublic), "text/plain;charset=utf-8");
+          const sitemap = await sitemapXml(site, fetchPublic);
+          if (!sitemap) return corsify(Response.json({ title: "Set site.url to generate a sitemap." }, { status: 422 }));
+          return text(sitemap, "application/xml;charset=utf-8");
+        }
+        return corsify(Response.json({ title: "Unknown site asset." }, { status: 404 }));
+      }
       if (
         segments[2] === "projects" &&
         segments[3] &&
