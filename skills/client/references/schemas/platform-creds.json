@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mizan-gpp.the-montiapple.workers.dev/v1/schemas/platform-creds.json",
-  "description": "platform-creds.json — the GITIGNORED local value store (spec/secrets.md §3.1): NAME → value; sync/seed resolve EnvRefs here before the process env. Never commit.",
+  "description": ".platform-creds.json — the GITIGNORED local value store (spec/secrets.md §3.1): NAME → value; sync/seed resolve EnvRefs here before the process env. Never commit.",
   "type": "object",
   "patternProperties": {
     "^[A-Z][A-Z0-9_]*$": {

@@ -77,12 +77,12 @@ the local value's sha256 prefix against the listed digest; `sync push`
 PUTs only differing names. Deleting a name from the file +
 `push --prune` deletes the secret.
 
-### 3.1 platform-creds.json — the local value store
+### 3.1 .platform-creds.json — the local value store
 
-EnvRefs resolve from, in order: **`platform-creds.json`** (looked up
+EnvRefs resolve from, in order: **`.platform-creds.json`** (looked up
 in the config/seed dir, then its parent — the repo root, a GITIGNORED
 sibling of `.owner-creds.json`), then the process env. The file is a
-flat `NAME → value` map (`$schema`: the hosted `platform-creds.json`
+flat `NAME → value` map (`$schema`: the hosted `.platform-creds.json`
 kind), mode 600. This is how a layer-3 user SEES their secret values
 locally: owner-creds identifies them to the platform,
 platform-creds holds the credentials their project hands to

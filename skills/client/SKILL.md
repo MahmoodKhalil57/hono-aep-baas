@@ -30,7 +30,7 @@ public, self-describing API.
    - `{BASE}/mcp` — the project MCP server, same contract for agents.
 3. Maintenance loop: `./cli.sh` (or `bunx hono-aep-baas-cli`) —
    `sync|seed|secrets|validate`, keys from `.owner-creds.json`, secret
-   values from `platform-creds.json` (both gitignored, repo root).
+   values from `.platform-creds.json` (both gitignored, repo root).
 
 ## Golden rules (violating these breaks real users)
 
@@ -78,7 +78,7 @@ llms.txt, sw.js, favicon, OG cards), and the generated-admin renderer.
 - Content, products, discounts, demo users → seed files, `./cli.sh seed push`.
 - Theme/pages/forms/admin composition/SEO/OG config → config repo
   (`project.cms.json` site.*), sync push.
-- Your own Google OAuth or Stripe keys → `platform-creds.json` +
+- Your own Google OAuth or Stripe keys → `.platform-creds.json` +
   `secrets.cms.json`, `./cli.sh secrets` (per-project secrets store).
 - Anything expressible as frontend JS/HTML over the endpoints above.
 

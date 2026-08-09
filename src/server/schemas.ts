@@ -138,7 +138,7 @@ const STATIC_SCHEMAS: Record<string, (base: string) => Json> = {
     return { ...mirrored, $comment: `canonical: ${envRefSchema.$id}` };
   },
   "platform-creds": (base) =>
-    doc(`${base}/platform-creds.json`, "platform-creds.json — the GITIGNORED local value store (spec/secrets.md §3.1): NAME → value; sync/seed resolve EnvRefs here before the process env. Never commit.", {
+    doc(`${base}/platform-creds.json`, ".platform-creds.json — the GITIGNORED local value store (spec/secrets.md §3.1): NAME → value; sync/seed resolve EnvRefs here before the process env. Never commit.", {
       type: "object",
       patternProperties: { "^[A-Z][A-Z0-9_]*$": { type: "string" } },
       additionalProperties: false,
