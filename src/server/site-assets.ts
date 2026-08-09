@@ -21,11 +21,14 @@ export type SiteDoc = {
     name?: string;
     shortName?: string;
     themeColor?: string;
+    accentColor?: string;
     backgroundColor?: string;
     cacheName?: string;
     icons?: Json[];
+    favicon?: string;
   };
   assets?: {
+    og?: Record<string, { kicker?: string; title?: string; subtitle?: string; money?: string }>;
     robots?: { extra?: string[] };
     sitemap?: { urls?: string[]; collections?: { slug: string; url: string }[] };
     llms?: {

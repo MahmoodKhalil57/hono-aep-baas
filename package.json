@@ -31,7 +31,8 @@
     "unstorage": "^1.17.0",
     "hono-aep-observability": "file:../customPackages/hono-aep-observability",
     "hono-aep-gateway": "file:../customPackages/hono-aep-gateway",
-    "hono-aep-delivery": "file:../customPackages/hono-aep-delivery"
+    "hono-aep-delivery": "file:../customPackages/hono-aep-delivery",
+    "@resvg/resvg-wasm": "^2.6.2"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

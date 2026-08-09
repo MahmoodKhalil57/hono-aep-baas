@@ -6,6 +6,8 @@ import type { ServiceInstance } from "hono-aep-cms";
 import servicesArtifact from "../dist/services.json";
 import { setEmbedder } from "./server/embed";
 import { setBlobs } from "./server/blobs";
+import resvgWasm from "@resvg/resvg-wasm/index_bg.wasm";
+import { initResvg } from "./server/site-og";
 import { createStorage } from "unstorage";
 import r2Driver from "unstorage/drivers/cloudflare-r2-binding";
 
@@ -31,6 +33,7 @@ async function boot(env: Env): Promise<{
 }> {
   setDb(drizzle(env.DB as Parameters<typeof drizzle>[0], { schema }) as unknown as AppDb);
   setInstances(servicesArtifact as ServiceInstance[]);
+  initResvg(resvgWasm); // OG-card rasterization (site-og.ts)
   // Real semantic search: @cf/baai/bge-m3 over the AI binding (Workers AI).
   if (env.AI) {
     setEmbedder(async (text: string) => {

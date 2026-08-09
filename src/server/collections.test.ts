@@ -153,6 +153,54 @@ describe("hosted site assets (/site/{asset})", () => {
     expect(llms).toContain("# Asset Site");
     expect(llms).toContain("[Widget](https://shop.example/item.html?id=widget)");
   });
+
+  it("generates favicon + rasterized OG cards (site-wide and per-entity)", async () => {
+    const cookie = await signUp("og-assets");
+    const project = await makeProject(cookie, "OG Site");
+    await fetch(url(`/v1/${project}`), {
+      method: "PATCH",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({
+        site: {
+          url: "https://og.example",
+          description: "Cards at the edge.",
+          app: { shortName: "OG", themeColor: "#123456" },
+          assets: { og: { items: { title: "name", subtitle: "note", money: "price_cents" } } },
+        },
+      }),
+    });
+    await fetch(url(`/v1/${project}/collections/items`), {
+      method: "PUT",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ definition: { singular: "item", plural: "items", fields: [{ name: "name", type: "string", required: true }, { name: "note", type: "string" }, { name: "price_cents", type: "number", integer: true }], policy_create: "authenticated", policy_list: "public", policy_get: "public" } }),
+    });
+    await fetch(url(`/v1/${project}/items?id=widget`), {
+      method: "POST",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ name: "Widget Deluxe", note: "The finest widget.", price_cents: 1999 }),
+    });
+
+    const favicon = await fetch(url(`/v1/${project}/site/favicon.svg`));
+    expect(favicon.headers.get("Content-Type")).toContain("image/svg");
+    const svg = await favicon.text();
+    expect(svg).toContain("#123456"); // themeColor lettermark
+    expect(svg).toContain(">O</text>"); // shortName initial
+
+    const siteCard = await fetch(url(`/v1/${project}/site/og.png`));
+    expect(siteCard.status).toBe(200);
+    expect(siteCard.headers.get("Content-Type")).toBe("image/png");
+    const siteBytes = new Uint8Array(await siteCard.arrayBuffer());
+    expect([...siteBytes.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]); // PNG magic
+
+    const entityCard = await fetch(url(`/v1/${project}/site/og/items/widget.png`));
+    expect(entityCard.status).toBe(200);
+    const entityBytes = new Uint8Array(await entityCard.arrayBuffer());
+    expect([...entityBytes.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+    expect(entityBytes.length).toBeGreaterThan(3000); // a real card, not a blank
+
+    const unmapped = await fetch(url(`/v1/${project}/site/og/unknown/x.png`));
+    expect(unmapped.status).toBe(404);
+  });
 });
 
 describe("hosted collections (JIT)", () => {

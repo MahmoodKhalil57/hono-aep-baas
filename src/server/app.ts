@@ -717,6 +717,18 @@ export function createHandler(): (request: Request) => Promise<Response> {
         const displayName = projectRows[0].display_name ?? pid;
         if (asset === "manifest.webmanifest")
           return text(JSON.stringify(manifestJson(displayName, site), null, 2), "application/manifest+json");
+        if (asset === "favicon.svg") {
+          const { faviconSvg } = await import("./site-og");
+          return text(faviconSvg(displayName, site), "image/svg+xml;charset=utf-8");
+        }
+        if (asset === "og.png") {
+          const { ogCardSvg, renderPng } = await import("./site-og");
+          const kicker = site.url ? new URL(site.url).host : displayName;
+          const png = await renderPng(ogCardSvg(
+            { kicker, title: site.app?.name ?? displayName, subtitle: site.description }, site));
+          return corsify(new Response(png, {
+            headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=3600" } }));
+        }
         if (asset === "robots.txt") return text(robotsTxt(site, `${url.origin}/v1/projects/${pid}/site`), "text/plain;charset=utf-8");
         if (asset === "sw.js") return text(swJs(site), "text/javascript;charset=utf-8");
         if (asset === "llms.txt" || asset === "sitemap.xml") {
@@ -741,6 +753,39 @@ export function createHandler(): (request: Request) => Promise<Response> {
           return text(sitemap, "application/xml;charset=utf-8");
         }
         return corsify(Response.json({ title: "Unknown site asset." }, { status: 404 }));
+      }
+      // Per-entity OG cards: /site/og/{plural}/{id}.png — field mapping
+      // from site.assets.og[plural], row via an anonymous public read.
+      if (
+        segments[2] === "projects" && segments[3] && segments[4] === "site" && segments[5] === "og" &&
+        segments[6] && segments[7]?.endsWith(".png") && !segments[8] && request.method === "GET"
+      ) {
+        const pid = segments[3];
+        const plural = segments[6];
+        const id = decodeURIComponent(segments[7].slice(0, -".png".length));
+        const projectRows = await db.select().from(projects).where(eq(projects.id, pid)).limit(1);
+        const site = (projectRows[0]?.site ?? {}) as import("./site-assets").SiteDoc;
+        const mapping = site.assets?.og?.[plural];
+        if (!mapping) return corsify(Response.json({ title: `No og mapping for ${plural} (site.assets.og).` }, { status: 404 }));
+        const jit = await jitProjectApp(pid);
+        if (!jit) return corsify(Response.json({ title: "No collections declared." }, { status: 404 }));
+        const defaultLocale = site.locales?.default ?? "en";
+        const synth = new URL(`${url.origin}/v1/projects/${pid}/${plural}/${id}?locale=${defaultLocale}`);
+        const { localizedJitFetch } = await import("./localize");
+        const rowResponse = await localizedJitFetch(jit, new Request(synth), synth, `/${plural}/${id}`);
+        if (!rowResponse.ok) return corsify(rowResponse);
+        const row = (await rowResponse.json()) as Record<string, unknown>;
+        const flat = (value: unknown) =>
+          typeof value === "object" && value !== null ? String(Object.values(value as object)[0] ?? "") : String(value ?? "");
+        const { ogCardSvg, renderPng } = await import("./site-og");
+        const png = await renderPng(ogCardSvg({
+          kicker: mapping.kicker ?? (site.url ? new URL(site.url).host : plural),
+          title: flat(row[mapping.title ?? "name"] ?? row.title) || id,
+          subtitle: mapping.subtitle ? flat(row[mapping.subtitle]) : undefined,
+          badge: mapping.money && row[mapping.money] != null ? `$${(Number(row[mapping.money]) / 100).toFixed(2)}` : undefined,
+        }, site));
+        return corsify(new Response(png, {
+          headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=3600" } }));
       }
       if (
         segments[2] === "projects" &&

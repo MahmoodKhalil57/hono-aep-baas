@@ -15,6 +15,9 @@ const appRoot = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 setInstances(readServices(appRoot));
 setBlobs(createStorage({ driver: fsLiteDriver({ base: `${appRoot}/data/media` }) })); // media bytes (fs locally)
 
+const { initResvg } = await import("./site-og");
+initResvg(await Bun.file(`${appRoot}/node_modules/@resvg/resvg-wasm/index_bg.wasm`).arrayBuffer());
+
 const { createHandler } = await import("./app");
 const { jobs } = await import("./services");
 const handle = createHandler();
