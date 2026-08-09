@@ -937,8 +937,17 @@ export function createHandler(): (request: Request) => Promise<Response> {
         ],
       });
     }
-    if (path === "/api/auth/*".replace("*", "") || path.startsWith("/api/auth/")) return routes["/api/auth/*"](request);
-    if (path === "/v1/keys:mint") return routes["/v1/keys:mint"].POST(request);
+    if (path === "/api/auth/*".replace("*", "") || path.startsWith("/api/auth/")) {
+      // Cross-origin platform auth (self-clonability): any static origin
+      // may host a console — preflight + CORS, bearer-first via
+      // set-auth-token (already in Expose-Headers).
+      if (request.method === "OPTIONS") return preflight();
+      return corsify(await routes["/api/auth/*"](request));
+    }
+    if (path === "/v1/keys:mint") {
+      if (request.method === "OPTIONS") return preflight();
+      return corsify(await routes["/v1/keys:mint"].POST(request));
+    }
     if (path === "/v1/openapi.json") return routes["/v1/openapi.json"]();
     if (path === "/livez" || path === "/readyz" || path === "/healthz") return probes.fetch(request);
     if (path.startsWith("/v1/")) return routes["/v1/*"](request);

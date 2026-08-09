@@ -257,6 +257,31 @@ describe("hosted site assets (/site/{asset})", () => {
   });
 });
 
+describe("self-clonability: the platform console is hostable from ANY static origin", () => {
+  it("cross-origin platform auth is bearer-first with CORS; keys:mint answers preflight", async () => {
+    const foreign = { Origin: "https://someone.github.io" };
+    // preflight on auth
+    const pre = await fetch(url("/api/auth/sign-in/email"), { method: "OPTIONS", headers: { ...foreign, "Access-Control-Request-Method": "POST" } });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    // sign-up from a foreign origin returns the session as set-auth-token
+    const signedUp = await fetch(url("/api/auth/sign-up/email"), {
+      method: "POST",
+      headers: { ...json, ...foreign },
+      body: JSON.stringify({ email: `clone-${Date.now()}@example.com`, password: "supersecret1", name: "clone" }),
+    });
+    expect(signedUp.status).toBe(200);
+    expect(signedUp.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    const token = signedUp.headers.get("set-auth-token");
+    expect(token).toBeTruthy();
+    // the bearer token drives the whole definition plane — mint a key with it
+    expect((await fetch(url("/v1/keys:mint"), { method: "OPTIONS", headers: foreign })).status).toBe(204);
+    const minted = await fetch(url("/v1/keys:mint"), { method: "POST", headers: { ...json, ...foreign, Authorization: `Bearer ${token}` }, body: "{}" });
+    expect(minted.status).toBe(200);
+    expect(((await minted.json()) as { plaintext: string }).plaintext).toMatch(/^sk_/);
+  });
+});
+
 describe("issue #2: platform-minted ids round-trip", () => {
   it("PUT accepts digit-leading project ids and X-Request-Id is on every /v1 response", async () => {
     const cookie = await signUp("uuid-owner");
