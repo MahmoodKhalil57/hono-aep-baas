@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mizan-gpp.the-montiapple.workers.dev/v1/schemas/seed-user.json",
+  "description": "users/*.json — an auth-pool account the seed ensures exists.",
+  "type": "object",
+  "required": [
+    "email"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string",
+      "format": "email"
+    },
+    "name": {
+      "type": "string"
+    },
+    "password": {
+      "$ref": "https://mizan-gpp.the-montiapple.workers.dev/v1/schemas/env-ref.json#/$defs/configString"
+    }
+  },
+  "additionalProperties": true
+}

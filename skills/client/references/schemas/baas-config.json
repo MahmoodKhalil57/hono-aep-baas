@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mizan-gpp.the-montiapple.workers.dev/v1/schemas/baas-config.json",
+  "description": "hono-aep-baas-config/baas.json — the sync client's coordinates.",
+  "type": "object",
+  "required": [
+    "endpoint",
+    "project",
+    "resources"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "endpoint": {
+      "type": "string",
+      "format": "uri"
+    },
+    "project": {
+      "type": "string"
+    },
+    "resources": {
+      "type": "array",
+      "description": "Definition-plane files to sync (forms/themes/collections globs).",
+      "items": {
+        "type": "string",
+        "description": "A glob relative to the repo root."
+      }
+    }
+  },
+  "additionalProperties": false
+}

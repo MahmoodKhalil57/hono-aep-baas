@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mizan-gpp.the-montiapple.workers.dev/v1/schemas/form-config.json",
+  "description": "forms/*.cms.json — a forms-as-a-service form.",
+  "type": "object",
+  "required": [
+    "display_name"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "display_name": {
+      "type": "string"
+    },
+    "notify_email": {
+      "type": "string",
+      "format": "email"
+    },
+    "create_time": {
+      "type": "string"
+    },
+    "update_time": {
+      "type": "string"
+    },
+    "created_by": {
+      "type": "string"
+    },
+    "submit_key": {
+      "type": "string",
+      "description": "Server-owned pk_ submit key (reified by pull)."
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mizan-gpp.the-montiapple.workers.dev/v1/schemas/seed-config.json",
+  "description": "hono-aep-baas-idempotent-seed/seed.json — the seed manifest (seed.md).",
+  "type": "object",
+  "required": [
+    "endpoint",
+    "project",
+    "resources"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "endpoint": {
+      "type": "string",
+      "format": "uri"
+    },
+    "project": {
+      "type": "string"
+    },
+    "resources": {
+      "type": "array",
+      "description": "Data-plane row files. String glob, or {glob, as} to write as a specific seeded user.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "required": [
+              "glob"
+            ],
+            "properties": {
+              "glob": {
+                "type": "string"
+              },
+              "as": {
+                "type": "string",
+                "description": "users/*.json file whose session performs these writes."
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "users": {
+      "type": "array",
+      "description": "End-user account files (auth-pool sign-ups).",
+      "items": {
+        "type": "string",
+        "description": "A glob relative to the repo root."
+      }
+    }
+  },
+  "additionalProperties": false
+}

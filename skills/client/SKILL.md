@@ -16,10 +16,17 @@ public, self-describing API.
    `hono-aep-baas-config/baas.json` — `endpoint` + `project` give
    `BASE = {endpoint}/v1/projects/{project}`.
 2. The contract is discoverable, never guessed:
+   - **`references/schemas/*.json` (EMBEDDED in this skill)** — the JSON
+     Schema for every config/seed file kind (project-config,
+     collection-config, secrets-config, seed-user, …). Read these from
+     disk BEFORE editing any repo JSON — no fetch needed; they are the
+     same documents the platform serves at
+     `{endpoint}/v1/schemas/{kind}.json` (each file's `$schema` URL).
    - `GET {BASE}/openapi.json` — every collection, field, policy and
      `x-aep-ui` metadata (labels, widgets, localized flags).
-   - `{endpoint}/v1/schemas/{kind}.json` — JSON Schemas for every
-     config/seed file kind; every repo JSON declares its `$schema`.
+   - `GET {BASE}/schemas/rows/{plural}.json` — per-collection SEED-ROW
+     schemas, generated from the live definition (fetch-only: they
+     change whenever the definition does).
    - `{BASE}/mcp` — the project MCP server, same contract for agents.
 3. Maintenance loop: `./cli.sh` (or `bunx hono-aep-baas-cli`) —
    `sync|seed|secrets|validate`, keys from `.owner-creds.json`, secret

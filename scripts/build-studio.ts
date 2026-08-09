@@ -50,3 +50,9 @@ for (const artifact of result.outputs.filter((a) => a.size > 200_000)) {
   console.log(`  ${(artifact.size / 1024).toFixed(0)} KB  ${artifact.path.split("/").pop()}`);
 }
 await import(new URL("./vendor-bootstrap-ui.ts", import.meta.url).pathname);
+// Keep the client skill's embedded schema snapshots in sync (suite checkout only).
+try {
+  await import(new URL("../../customPackages/hono-aep-baas-client-skill/scripts/embed-schemas.ts", import.meta.url).pathname);
+} catch {
+  console.log("(skill schema embed skipped — no suite checkout)");
+}

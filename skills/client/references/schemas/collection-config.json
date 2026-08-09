@@ -1,0 +1,470 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mizan-gpp.the-montiapple.workers.dev/v1/schemas/collection-config.json",
+  "description": "collections/*.cms.json — a JIT resource definition (validated by the server's own resourceDocumentSchema).",
+  "type": "object",
+  "required": [
+    "definition"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "definition": {
+      "type": "object",
+      "properties": {
+        "singular": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+          "x-aep-field-behavior": [
+            "IMMUTABLE"
+          ],
+          "description": "kebab-case singular noun (AEP-122)."
+        },
+        "plural": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+          "x-aep-field-behavior": [
+            "IMMUTABLE"
+          ],
+          "description": "kebab-case collection segment."
+        },
+        "module": {
+          "description": "The .cms.ts module this blueprint lives in (create: omit for its own new file).",
+          "type": "string",
+          "x-aep-field-behavior": [
+            "IMMUTABLE"
+          ]
+        },
+        "export_name": {
+          "type": "string",
+          "x-aep-field-behavior": [
+            "OUTPUT_ONLY"
+          ],
+          "readOnly": true,
+          "description": "The blueprint's export identifier."
+        },
+        "parent_collection": {
+          "description": "AEP-124 nesting: the parent blueprint's collection (records under pets → 'pets'). The imperative layer maps it to the defined parent resource.",
+          "x-ui": {
+            "hint": "Nested resources live at /<parent>/{id}/<plural>. Leave empty for top-level."
+          },
+          "type": "string"
+        },
+        "schema_import": {
+          "description": "When the schema is a shared cmsSchema, its home (module#export). Field edits write there.",
+          "type": "string",
+          "x-aep-field-behavior": [
+            "OUTPUT_ONLY"
+          ],
+          "readOnly": true
+        },
+        "soft_delete": {
+          "description": "AEP-164 soft delete + :undelete.",
+          "type": "boolean"
+        },
+        "states": {
+          "description": "AEP-216 lifecycle states (UPPER_SNAKE_CASE).",
+          "x-ui": {
+            "hint": "Include DELETED to park soft-deleted resources there."
+          },
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "initial_state": {
+          "type": "string"
+        },
+        "id_pattern": {
+          "description": "Regex constraining client-chosen ids (AEP-133).",
+          "x-ui": {
+            "placeholder": "^[0-9]+$"
+          },
+          "type": "string"
+        },
+        "method_list": {
+          "default": true,
+          "description": "Expose List.",
+          "type": "boolean"
+        },
+        "method_get": {
+          "default": true,
+          "description": "Expose Get.",
+          "type": "boolean"
+        },
+        "method_create": {
+          "default": true,
+          "description": "Expose Create.",
+          "type": "boolean"
+        },
+        "method_update": {
+          "default": true,
+          "description": "Expose Update (merge-patch).",
+          "type": "boolean"
+        },
+        "method_apply": {
+          "default": true,
+          "description": "Expose Apply (PUT upsert).",
+          "type": "boolean"
+        },
+        "method_delete": {
+          "default": true,
+          "description": "Expose Delete.",
+          "type": "boolean"
+        },
+        "owner": {
+          "description": "Owner binding: dot-path of the owner field (enables `owner` policies + List pushdown).",
+          "type": "string"
+        },
+        "policy_list": {
+          "description": "Authorization policy for List (spec: auth/authz.json).",
+          "x-ui": {
+            "control": "json",
+            "format": "json"
+          },
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "policy_get": {
+          "description": "Authorization policy for Get.",
+          "x-ui": {
+            "control": "json",
+            "format": "json"
+          },
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "policy_create": {
+          "description": "Authorization policy for Create.",
+          "x-ui": {
+            "control": "json",
+            "format": "json"
+          },
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "policy_update": {
+          "description": "Authorization policy for Update.",
+          "x-ui": {
+            "control": "json",
+            "format": "json"
+          },
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "policy_apply": {
+          "description": "Authorization policy for Apply.",
+          "x-ui": {
+            "control": "json",
+            "format": "json"
+          },
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "policy_delete": {
+          "description": "Authorization policy for Delete.",
+          "x-ui": {
+            "control": "json",
+            "format": "json"
+          },
+          "anyOf": [
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "default_page_size": {
+          "description": "List page size when the request names none (AEP-158).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "max_page_size_limit": {
+          "description": "Upper bound for max_page_size (AEP-158).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "filterable_fields": {
+          "description": "Restrict AEP-160 filtering to these fields (empty = all).",
+          "x-ui": {
+            "control": "chips"
+          },
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "orderable_fields": {
+          "description": "Restrict order_by to these fields (empty = all sortable).",
+          "x-ui": {
+            "control": "chips"
+          },
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "fields": {
+          "description": "The resource's user-declared fields.",
+          "x-ui": {
+            "hint": "Each row is one wire field. Order here is the form order.",
+            "reorderable": true
+          },
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "description": "Wire name (snake_case, AEP-140)."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "date",
+                  "time",
+                  "datetime",
+                  "object",
+                  "any"
+                ],
+                "description": "Semantic value kind."
+              },
+              "cardinality": {
+                "default": "one",
+                "description": "One value, or a repeated field (AEP-144).",
+                "type": "string",
+                "enum": [
+                  "one",
+                  "many"
+                ]
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "integer": {
+                "description": "Whole numbers only.",
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string"
+              },
+              "enum_values": {
+                "description": "Closed value set (AEP-126); leave empty for free values.",
+                "x-ui": {
+                  "control": "chips",
+                  "placeholder": "Add a value and press Enter…"
+                },
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "reference_collection": {
+                "description": "Target collection for an AEP-124 reference (e.g. \"pets\").",
+                "type": "string"
+              },
+              "format": {
+                "description": "Semantic string format (prints z.email() / z.url()).",
+                "type": "string",
+                "enum": [
+                  "email",
+                  "url"
+                ]
+              },
+              "behavior": {
+                "description": "AEP-203 field behavior.",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "OUTPUT_ONLY",
+                    "INPUT_ONLY",
+                    "IMMUTABLE",
+                    "UNORDERED_LIST"
+                  ]
+                }
+              },
+              "min_length": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "max_length": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "minimum": {
+                "type": "number"
+              },
+              "maximum": {
+                "type": "number"
+              },
+              "pattern": {
+                "description": "Regex the value must match.",
+                "type": "string"
+              },
+              "unique": {
+                "description": "No two rows may share this value (409 ALREADY_EXISTS; compiled mode also emits the DDL constraint).",
+                "type": "boolean"
+              },
+              "indexed": {
+                "description": "Index this column (compiled mode DDL).",
+                "type": "boolean"
+              },
+              "localized": {
+                "description": "Locale-map storage: writes merge per locale, reads resolve via the site's fallback chain (cms/localization.md §3).",
+                "type": "boolean"
+              },
+              "min_items": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "max_items": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "default_value": {
+                "description": "Default when absent (JSON).",
+                "x-ui": {
+                  "control": "json",
+                  "format": "json"
+                }
+              },
+              "presentation": {
+                "description": "The x-ui object, verbatim (control, placeholder, hint, mask, …).",
+                "x-ui": {
+                  "control": "xui-composer"
+                },
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "children": {
+                "description": "Child field rows for objects and repeaters (same row shape, JSON for now).",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              }
+            },
+            "required": [
+              "name",
+              "type"
+            ]
+          }
+        },
+        "transitions": {
+          "description": "Declarative AEP-216 transitions (side effects stay in code).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "verb": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "description": "Custom method verb (AEP-136)."
+              },
+              "from": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "States the transition is legal from."
+              },
+              "to": {
+                "type": "string",
+                "description": "Resulting state."
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "verb",
+              "from",
+              "to"
+            ]
+          }
+        }
+      },
+      "required": [
+        "singular",
+        "plural"
+      ]
+    }
+  },
+  "additionalProperties": true
+}
