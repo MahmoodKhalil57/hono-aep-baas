@@ -142,7 +142,9 @@ describe("hosted site assets (/site/{asset})", () => {
     expect(manifest.theme_color).toBe("#123456");
     const robots = await (await get("robots.txt")).text();
     expect(robots).toContain("Disallow: /admin.html");
-    expect(robots).toContain("Sitemap: https://shop.example/sitemap.xml");
+    expect(robots).toContain(`Sitemap: ${url(`/v1/${project}/site/sitemap.xml`)}`);
+    const manifest2 = (await (await get("manifest.webmanifest")).json()) as Record<string, unknown>;
+    expect(manifest2.start_url).toBe("https://shop.example/"); // absolute — cross-origin manifest links resolve against the manifest URL
     expect(await (await get("sw.js")).text()).toContain("network-first");
     const sitemap = await (await get("sitemap.xml")).text();
     expect(sitemap).toContain("<loc>https://shop.example/items.html</loc>");

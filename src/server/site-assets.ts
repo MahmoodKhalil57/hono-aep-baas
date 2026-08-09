@@ -45,11 +45,14 @@ const flat = (value: unknown): string =>
 
 export function manifestJson(displayName: string, site: SiteDoc): Json {
   const app = site.app ?? {};
+  // start_url/scope resolve against the MANIFEST's URL — a cross-origin
+  // <link rel=manifest> therefore needs them absolute on the site origin.
+  const scope = site.url ? `${site.url.replace(/\/$/, "")}/` : "/";
   return {
     name: app.name ?? displayName,
     short_name: app.shortName ?? displayName,
-    start_url: "/",
-    scope: "/",
+    start_url: scope,
+    scope,
     display: "standalone",
     background_color: app.backgroundColor ?? "#faf6f0",
     theme_color: app.themeColor ?? "#d9482b",
@@ -59,8 +62,9 @@ export function manifestJson(displayName: string, site: SiteDoc): Json {
 
 export function robotsTxt(site: SiteDoc, hostedBase: string): string {
   const lines = ["User-agent: *", "Allow: /", ...(site.assets?.robots?.extra ?? [])];
-  const sitemapAt = site.url ? `${site.url.replace(/\/$/, "")}/sitemap.xml` : `${hostedBase}/sitemap.xml`;
-  return `${lines.join("\n")}\n\nSitemap: ${sitemapAt}\n`;
+  // The hosted sitemap is canonical (robots.txt cross-host Sitemap
+  // directives are honored); frontends no longer carry a copy.
+  return `${lines.join("\n")}\n\nSitemap: ${hostedBase}/sitemap.xml\n`;
 }
 
 export function swJs(site: SiteDoc): string {
