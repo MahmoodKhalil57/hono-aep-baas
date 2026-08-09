@@ -71,11 +71,24 @@ notification/email providers.
 ```
 
 Values are literals or EnvRefs resolved by the SYNC CLIENT at push
-time from the operator's local env — secret values never live in git,
-and never appear in `sync pull` output. Drift detection is by digest:
-`sync diff` compares the local value's sha256 prefix against the
-listed digest; `sync push` PUTs only differing names. Deleting a name
-from the file + `push --prune` deletes the secret.
+time — secret values never live in git, and never appear in
+`sync pull` output. Drift detection is by digest: `sync diff` compares
+the local value's sha256 prefix against the listed digest; `sync push`
+PUTs only differing names. Deleting a name from the file +
+`push --prune` deletes the secret.
+
+### 3.1 platform-creds.json — the local value store
+
+EnvRefs resolve from, in order: **`platform-creds.json`** (looked up
+in the config/seed dir, then its parent — the repo root, a GITIGNORED
+sibling of `.owner-creds.json`), then the process env. The file is a
+flat `NAME → value` map (`$schema`: the hosted `platform-creds.json`
+kind), mode 600. This is how a layer-3 user SEES their secret values
+locally: owner-creds identifies them to the platform,
+platform-creds holds the credentials their project hands to
+third parties (OAuth apps, Stripe, …). Both files together are the
+complete portable identity of a deployment. `seed` resolves its
+EnvRefs (e.g. seeded user passwords) through the same ladder.
 
 ## 4. Non-goals
 

@@ -39,14 +39,33 @@ const stripOutputOnly = (value: Json): Json =>
 const equal = (a: Json, b: Json): boolean =>
   JSON.stringify(canonical(stripOutputOnly(a))) === JSON.stringify(canonical(stripOutputOnly(b)));
 
-/** EnvRefs ({"$env": NAME}) resolve at run time — secrets never in files (§3.4). */
+/**
+ * EnvRefs ({"$env": NAME}) resolve at run time — secrets never in files
+ * (§3.4). The ladder (spec/secrets.md §3.1): platform-creds.json (the
+ * gitignored repo-root sibling of .owner-creds.json) over the process env.
+ */
+let platformCreds: Record<string, string> = {};
+const loadPlatformCreds = (dir: string): void => {
+  for (const candidate of [join(dir, "platform-creds.json"), join(dir, "..", "platform-creds.json")]) {
+    try {
+      const raw = JSON.parse(readFileSync(candidate, "utf8")) as Json;
+      platformCreds = Object.fromEntries(
+        Object.entries(raw).filter(([name, value]) => name !== "$schema" && typeof value === "string"),
+      ) as Record<string, string>;
+      return;
+    } catch {
+      /* try the next location */
+    }
+  }
+};
 const resolveEnv = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(resolveEnv);
   if (value !== null && typeof value === "object") {
     const record = value as Json;
     if (typeof record["$env"] === "string" && Object.keys(record).length === 1) {
-      const resolved = process.env[record["$env"] as string];
-      if (resolved === undefined) throw new Error(`EnvRef $env:${record["$env"]} is not set`);
+      const name = record["$env"] as string;
+      const resolved = platformCreds[name] ?? process.env[name];
+      if (resolved === undefined) throw new Error(`EnvRef $env:${name} not in platform-creds.json nor the env`);
       return resolved;
     }
     return Object.fromEntries(Object.entries(record).map(([k, v]) => [k, resolveEnv(v)]));
@@ -57,6 +76,7 @@ const resolveEnv = (value: unknown): unknown => {
 export type SeedContext = { dir: string; key: string; fetchImpl?: typeof fetch; log?: (line: string) => void };
 
 const loadManifest = (dir: string): { endpoint: string; project: string; manifest: Manifest } => {
+  loadPlatformCreds(dir); // before any EnvRef resolves
   const manifest = JSON.parse(readFileSync(join(dir, "seed.json"), "utf8")) as Manifest;
   return {
     endpoint: resolveEnv(manifest.endpoint) as string,

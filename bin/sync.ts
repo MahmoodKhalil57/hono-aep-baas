@@ -122,6 +122,28 @@ type PlanEntry = {
  * lists sha256 4-byte prefixes; values are write-only).
  */
 type SecretsFile = { file: Record<string, string>; declared: boolean };
+
+/**
+ * platform-creds.json (spec/secrets.md §3.1): the GITIGNORED local value
+ * store — a sibling of .owner-creds.json in the repo root (or inside the
+ * config dir). EnvRefs resolve here before the process env.
+ */
+export const loadPlatformCreds = (dir: string): Record<string, string> => {
+  for (const candidate of [join(dir, "platform-creds.json"), join(dir, "..", "platform-creds.json")]) {
+    try {
+      const raw = JSON.parse(readFileSync(candidate, "utf8")) as Json;
+      const creds: Record<string, string> = {};
+      for (const [name, value] of Object.entries(raw)) {
+        if (name !== "$schema" && typeof value === "string") creds[name] = value;
+      }
+      return creds;
+    } catch {
+      /* try the next location */
+    }
+  }
+  return {};
+};
+
 export const loadSecrets = (dir: string): SecretsFile => {
   let raw: Json;
   try {
@@ -129,13 +151,17 @@ export const loadSecrets = (dir: string): SecretsFile => {
   } catch {
     return { file: {}, declared: false };
   }
+  const creds = loadPlatformCreds(dir);
   const file: Record<string, string> = {};
   for (const [name, value] of Object.entries(raw)) {
     if (name === "$schema") continue;
     if (typeof value === "string") file[name] = value;
     else if (value && typeof value === "object" && typeof (value as Json)["$env"] === "string") {
-      const resolved = process.env[(value as Json)["$env"] as string];
-      if (resolved === undefined) throw new Error(`secrets.cms.json: $env:${(value as Json)["$env"]} is not set locally`);
+      const ref = (value as Json)["$env"] as string;
+      const resolved = creds[ref] ?? process.env[ref];
+      if (resolved === undefined) {
+        throw new Error(`secrets.cms.json: $env:${ref} not in platform-creds.json nor the local env`);
+      }
       file[name] = resolved;
     } else throw new Error(`secrets.cms.json: ${name} must be a string or {"$env": NAME}`);
   }
