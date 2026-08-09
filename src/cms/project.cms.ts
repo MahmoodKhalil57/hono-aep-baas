@@ -4,7 +4,7 @@ import { cmsResource } from "hono-aep-cms";
 
 export const projectCms = cmsResource({
   singular: "project",
-  idPattern: /^[a-z][a-z0-9-]{0,62}$/,
+  idPattern: /^[a-z0-9][a-z0-9-]{0,62}$/, // platform-minted UUIDs may lead with a digit (issue #2) — the minter and the validator must agree
   plural: "projects",
   schema: z.object({
     display_name: z.string().min(1).max(120).meta({

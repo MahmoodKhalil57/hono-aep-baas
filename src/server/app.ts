@@ -213,7 +213,11 @@ export function createHandler(): (request: Request) => Promise<Response> {
       try {
         const response = await handleV1(request);
         wide.finish(response.status);
-        return response;
+        // The id we EXPOSE via CORS must actually be SET (issue #2's
+        // secondary finding): the trace id indexes the wide-event log.
+        const headers = new Headers(response.headers);
+        headers.set("X-Request-Id", wide.traceId);
+        return new Response(response.body, { status: response.status, headers });
       } catch (problem) {
         wide.set("error", (problem as Error).message.slice(0, 200));
         wide.finish(500);

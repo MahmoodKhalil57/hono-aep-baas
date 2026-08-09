@@ -257,6 +257,30 @@ describe("hosted site assets (/site/{asset})", () => {
   });
 });
 
+describe("issue #2: platform-minted ids round-trip", () => {
+  it("PUT accepts digit-leading project ids and X-Request-Id is on every /v1 response", async () => {
+    const cookie = await signUp("uuid-owner");
+    // Deterministic digit-leading id (a UUIDv4 leads with 0-9 62.5% of the time).
+    const created = await fetch(url("/v1/projects?id=0digit-leading-test"), {
+      method: "POST",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ display_name: "Digit" }),
+    });
+    expect(created.status).toBe(201);
+    const put = await fetch(url("/v1/projects/0digit-leading-test"), {
+      method: "PUT",
+      headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ display_name: "Digit Renamed" }),
+    });
+    expect(put.status).toBe(200);
+    expect(put.headers.get("X-Request-Id")).toMatch(/^[0-9a-f]{32}$/);
+    // errors carry it too — that id is how bugs get reported (skill playbook)
+    const bad = await fetch(url("/v1/projects/-leading-dash"), { method: "PUT", headers: { ...json, Cookie: cookie }, body: "{}" });
+    expect(bad.status).toBeGreaterThanOrEqual(400); // error responses carry the id too
+    expect(bad.headers.get("X-Request-Id")).toMatch(/^[0-9a-f]{32}$/);
+  });
+});
+
 describe("hosted collections (JIT)", () => {
   it("apply a definition → the resource is live: CRUD, policy, transition, filter", async () => {
     const cookie = await signUp("author");
