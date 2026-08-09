@@ -31,7 +31,7 @@ const walk = (at: string): void => {
 };
 walk(dir);
 
-const ajv = new Ajv2020({ strict: false, allErrors: true });
+const ajv = new Ajv2020({ strict: false, allErrors: true, loadSchema: (uri) => loadSchema(uri) as never });
 addFormats(ajv as never);
 const fetched = new Map<string, Promise<Record<string, unknown>>>();
 const loadSchema = (url: string): Promise<Record<string, unknown>> => {
@@ -65,7 +65,7 @@ for (const file of files.sort()) {
   }
   try {
     const schema = await loadSchema(schemaUrl);
-    const validate = ajv.getSchema(schemaUrl) ?? ajv.compile({ ...schema, $id: schemaUrl });
+    const validate = ajv.getSchema(schemaUrl) ?? (await ajv.compileAsync({ ...schema, $id: schemaUrl }));
     if (validate(body)) console.log(`✓ ${label}`);
     else {
       failures += 1;

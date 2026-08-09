@@ -89,7 +89,9 @@ export async function projectPool(projectId: string): Promise<AuthPool | null> {
             }
           }
         },
-        env: process.env,
+        // The resolution ladder (spec/secrets.md §2): the project's own
+        // secrets shadow the worker env — self-serve OAuth credentials.
+        env: await (await import("./secrets")).projectEnv(projectId),
       })
     : null;
   cache.set(projectId, pool);

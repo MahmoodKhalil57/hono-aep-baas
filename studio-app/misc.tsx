@@ -97,6 +97,63 @@ export function ProjectTab({ model, pid }: { model: AdminModel; pid: string }) {
   );
 }
 
+function SecretsPanel({ pid }: { pid: string }) {
+  type Row = { name: string; digest: string };
+  const [rows, setRows] = useState<Row[]>([]);
+  const [name, setName] = useState("");
+  const [value, setValue] = useState("");
+  const [note, setNote] = useState("");
+  const refresh = () => void client.list<Row>(`projects/${pid}/secrets`).then(({ results }) => setRows(results));
+  useEffect(refresh, [pid]);
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <p className="kicker mb-1">secrets</p>
+      <p className="text-sm text-muted-foreground">
+        Per-project secrets (spec/secrets.md) — write-only; auth pools and the payment gateway resolve
+        EnvRefs here first. Set STRIPE_SECRET_KEY + STRIPE_PUBLISHABLE_KEY to take payments into YOUR Stripe.
+      </p>
+      <ul className="my-2 flex flex-col gap-1">
+        {rows.map((row) => (
+          <li key={row.name} className="flex items-center gap-3 text-sm">
+            <code>{row.name}</code>
+            <span className="text-xs text-muted-foreground">sha256:{row.digest}</span>
+            <button
+              className="text-xs text-destructive hover:underline"
+              onClick={() => {
+                if (!confirm(`Delete secret ${row.name}?`)) return;
+                void client.delete(`projects/${pid}/secrets/${row.name}`).then(refresh);
+              }}
+            >
+              delete
+            </button>
+          </li>
+        ))}
+        {!rows.length && <li className="text-sm text-muted-foreground">None yet.</li>}
+      </ul>
+      <div className="flex flex-wrap gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value.toUpperCase())} placeholder="NAME"
+          className="w-56 rounded-md border bg-background px-2 py-1 font-mono text-sm" />
+        <input value={value} onChange={(e) => setValue(e.target.value)} type="password" placeholder="value (write-only)"
+          className="w-64 rounded-md border bg-background px-2 py-1 font-mono text-sm" />
+        <button
+          className="rounded-md bg-primary px-3 py-1 text-sm font-medium text-primary-foreground disabled:opacity-50"
+          disabled={!name || !value}
+          onClick={() => {
+            setNote("");
+            void client.apply(`projects/${pid}/secrets/${name}`, { value }).then(
+              () => { setName(""); setValue(""); refresh(); },
+              (thrown: unknown) => setNote(thrown instanceof Error ? thrown.message : "Refused"),
+            );
+          }}
+        >
+          Set secret
+        </button>
+      </div>
+      {note && <p className="mt-1 text-sm text-destructive">{note}</p>}
+    </div>
+  );
+}
+
 export function KeysTab({ pid }: { pid: string }) {
   const [minted, setMinted] = useState("");
   const [error, setError] = useState("");
@@ -125,6 +182,7 @@ export function KeysTab({ pid }: { pid: string }) {
         Contract: <a className="underline underline-offset-2" href={`/v1/projects/${pid}/openapi.json`}>openapi.json</a>
         {" · "}MCP: <code className="text-xs">{`${location.origin}/v1/projects/${pid}/mcp`}</code>
       </p>
+      <SecretsPanel pid={pid} />
     </section>
   );
 }

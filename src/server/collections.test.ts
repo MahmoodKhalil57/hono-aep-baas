@@ -229,6 +229,32 @@ describe("hosted site assets (/site/{asset})", () => {
     expect(rows.properties.blurb.additionalProperties).toEqual({ type: "string" }); // localized → locale map
     expect((await fetch(url(`/v1/${project}/schemas/rows/absent.json`))).status).toBe(404);
   });
+
+  it("per-project secrets: write-only, owner-gated, digest-listed (spec/secrets.md)", async () => {
+    const cookie = await signUp("secrets-owner");
+    const project = await makeProject(cookie, "Secret Site");
+    const owner = { ...json, Cookie: cookie };
+
+    // Anonymous and non-owner writes are refused.
+    expect((await fetch(url(`/v1/${project}/secrets`), { method: "GET" })).status).toBe(401);
+    const stranger = await signUp("secrets-stranger");
+    expect((await fetch(url(`/v1/${project}/secrets`), { headers: { ...json, Cookie: stranger } })).status).toBe(403);
+
+    // Set, list (digest only — the value never comes back), delete.
+    const put = await fetch(url(`/v1/${project}/secrets/STRIPE_SECRET_KEY`), {
+      method: "PUT", headers: owner, body: JSON.stringify({ value: "sk_test_abc123" }),
+    });
+    expect(put.status).toBe(200);
+    const { digest } = (await put.json()) as { digest: string };
+    expect(digest).toMatch(/^[0-9a-f]{8}$/);
+    await fetch(url(`/v1/${project}/secrets/lowercase-bad`), { method: "PUT", headers: owner, body: JSON.stringify({ value: "x" }) })
+      .then((r) => expect(r.status).toBe(400));
+    const listed = (await (await fetch(url(`/v1/${project}/secrets`), { headers: owner })).json()) as { results: { name: string; digest: string }[] };
+    expect(listed.results).toEqual([{ name: "STRIPE_SECRET_KEY", digest }]);
+    expect(JSON.stringify(listed)).not.toContain("sk_test_abc123"); // write-only
+    expect((await fetch(url(`/v1/${project}/secrets/STRIPE_SECRET_KEY`), { method: "DELETE", headers: owner })).status).toBe(204);
+    expect(((await (await fetch(url(`/v1/${project}/secrets`), { headers: owner })).json()) as { results: unknown[] }).results).toEqual([]);
+  });
 });
 
 describe("hosted collections (JIT)", () => {

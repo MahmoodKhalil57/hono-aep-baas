@@ -116,6 +116,61 @@ type PlanEntry = {
 };
 
 /** The plan: per file create/update/noop, plus account-only prune candidates. */
+/**
+ * secrets.cms.json (spec/secrets.md §3): NAME → literal | {"$env": …}
+ * resolved from the LOCAL env at push time. Drift by digest (the server
+ * lists sha256 4-byte prefixes; values are write-only).
+ */
+type SecretsFile = { file: Record<string, string>; declared: boolean };
+export const loadSecrets = (dir: string): SecretsFile => {
+  let raw: Json;
+  try {
+    raw = JSON.parse(readFileSync(join(dir, "secrets.cms.json"), "utf8")) as Json;
+  } catch {
+    return { file: {}, declared: false };
+  }
+  const file: Record<string, string> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    if (name === "$schema") continue;
+    if (typeof value === "string") file[name] = value;
+    else if (value && typeof value === "object" && typeof (value as Json)["$env"] === "string") {
+      const resolved = process.env[(value as Json)["$env"] as string];
+      if (resolved === undefined) throw new Error(`secrets.cms.json: $env:${(value as Json)["$env"]} is not set locally`);
+      file[name] = resolved;
+    } else throw new Error(`secrets.cms.json: ${name} must be a string or {"$env": NAME}`);
+  }
+  return { file, declared: true };
+};
+
+const digestOf = async (value: string): Promise<string> => {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(hash).slice(0, 4)].map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+
+async function secretsPlan(
+  context: SyncContext,
+  manifest: Manifest,
+  call: ReturnType<typeof api>,
+): Promise<PlanEntry[]> {
+  const { file, declared } = loadSecrets(context.dir);
+  if (!declared) return [];
+  const listed = await call("GET", `projects/${manifest.project}/secrets`);
+  if (!listed.ok) throw new Error(`GET secrets → ${listed.status}`);
+  const remote = new Map(
+    ((await listed.json()) as { results: { name: string; digest: string }[] }).results.map((s) => [s.name, s.digest]),
+  );
+  const plan: PlanEntry[] = [];
+  for (const [name, value] of Object.entries(file)) {
+    const path = `projects/${manifest.project}/secrets/${name}`;
+    if (!remote.has(name)) plan.push({ path, file: "secrets.cms.json", action: "create" });
+    else plan.push({ path, file: "secrets.cms.json", action: remote.get(name) === (await digestOf(value)) ? "noop" : "update" });
+  }
+  for (const name of remote.keys()) {
+    if (!(name in file)) plan.push({ path: `projects/${manifest.project}/secrets/${name}`, action: "prune" });
+  }
+  return plan;
+}
+
 export async function diff(context: SyncContext): Promise<PlanEntry[]> {
   const manifest = loadManifest(context.dir);
   const call = api(context, manifest);
@@ -165,6 +220,7 @@ export async function diff(context: SyncContext): Promise<PlanEntry[]> {
       if (!slugs.has(slug)) plan.push({ path: row.path, action: "prune" });
     }
   }
+  plan.push(...(await secretsPlan(context, manifest, call)));
   return plan;
 }
 
@@ -217,6 +273,17 @@ export async function push(
         throw new Error(`DELETE ${entry.path} → ${response.status}`);
       }
       pruned += 1;
+      continue;
+    }
+    if (entry.path.includes("/secrets/")) {
+      // Secrets carry no ETag ceremony: PUT {value} is a full replace and
+      // the plan already compared digests.
+      const { file } = loadSecrets(context.dir);
+      const name = entry.path.split("/").pop()!;
+      log(`${entry.action.toUpperCase()} ${entry.path}`);
+      const response = await call("PUT", entry.path, { value: file[name]! });
+      if (!response.ok) throw new Error(`PUT ${entry.path} → ${response.status}`);
+      applied += 1;
       continue;
     }
     const body =

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { resourceDocumentSchema, zodFromFields } from "hono-aep-cms";
+import { envRefSchema } from "./generated/env-ref-schema";
 
 /**
  * Hosted JSON Schemas (baas/sync.md §6 / seed.md §7): every file in a
@@ -16,18 +17,13 @@ import { resourceDocumentSchema, zodFromFields } from "hono-aep-cms";
 type Json = Record<string, unknown>;
 const DRAFT = "https://json-schema.org/draft/2020-12/schema";
 
-/** Secrets in config files may be env indirections: {"$env": "NAME"}. */
-const envString: Json = {
-  oneOf: [
-    { type: "string" },
-    {
-      type: "object",
-      required: ["$env"],
-      properties: { $env: { type: "string", description: "Environment variable holding the value." } },
-      additionalProperties: false,
-    },
-  ],
-};
+/**
+ * Suite composition (customPackages/spec/suite.json): the canonical
+ * schemas carry non-fetchable hono-aep.dev $ids — this surface is their
+ * FETCHABLE MIRROR, and file-kind schemas compose them by $ref
+ * (EnvRef's configString for any literal-or-secret value).
+ */
+const envString = (base: string): Json => ({ $ref: `${base}/env-ref.json#/$defs/configString` });
 
 const globList = (description: string): Json => ({
   type: "array",
@@ -133,6 +129,20 @@ const SITE: Json = {
 };
 
 const STATIC_SCHEMAS: Record<string, (base: string) => Json> = {
+  "env-ref": (base) => {
+    // The suite-canonical EnvRef, $id AND internal self-$refs rewritten to
+    // the fetchable mirror (the canonical hono-aep.dev id doesn't resolve).
+    const mirrored = JSON.parse(
+      JSON.stringify(envRefSchema).replaceAll(envRefSchema.$id, `${base}/env-ref.json`),
+    ) as Json;
+    return { ...mirrored, $comment: `canonical: ${envRefSchema.$id}` };
+  },
+  "secrets-config": (base) =>
+    doc(`${base}/secrets-config.json`, "secrets.cms.json — per-project secrets (spec/secrets.md §3): NAME → literal or EnvRef resolved by the sync client; values never live in git.", {
+      type: "object",
+      patternProperties: { "^[A-Z][A-Z0-9_]*$": envString(base) },
+      additionalProperties: false,
+    }),
   "baas-config": (base) =>
     doc(`${base}/baas-config.json`, "hono-aep-baas-config/baas.json — the sync client's coordinates.", {
       type: "object",
@@ -207,7 +217,7 @@ const STATIC_SCHEMAS: Record<string, (base: string) => Json> = {
     doc(`${base}/seed-user.json`, "users/*.json — an auth-pool account the seed ensures exists.", {
       type: "object",
       required: ["email"],
-      properties: { email: { type: "string", format: "email" }, name: { type: "string" }, password: envString },
+      properties: { email: { type: "string", format: "email" }, name: { type: "string" }, password: envString(base) },
       additionalProperties: true,
     }),
   "seed-lock": (base) =>

@@ -255,6 +255,43 @@ export function createHandler(): (request: Request) => Promise<Response> {
           { headers: { "Cache-Control": "no-cache" } },
         ));
       }
+      // Per-project secrets (spec/secrets.md): write-only values, owner-
+      // gated; the self-serve keystone — auth pools + the payment gateway
+      // resolve EnvRefs against these before the worker env.
+      if (segments[2] === "projects" && segments[3] && segments[4] === "secrets" && !segments[6]) {
+        const pid = segments[3];
+        const principal = await principalFrom(
+          { req: { raw: request, header: (n: string) => request.headers.get(n) } } as never,
+        );
+        const projectRows = await db.select().from(projects).where(eq(projects.id, pid)).limit(1);
+        if (!projectRows[0]) return corsify(Response.json({ title: "No such project." }, { status: 404 }));
+        if (!principal || projectRows[0].created_by !== principal.userId) {
+          return corsify(Response.json({ title: "Owner only." }, { status: principal ? 403 : 401 }));
+        }
+        const secrets = await import("./secrets");
+        const { invalidatePool } = await import("./pools");
+        if (!segments[5] && request.method === "GET") {
+          return corsify(Response.json({ results: await secrets.listSecrets(pid) }));
+        }
+        if (segments[5] && !secrets.SECRET_NAME.test(segments[5])) {
+          return corsify(Response.json({ title: "Secret names match ^[A-Z][A-Z0-9_]*$." }, { status: 400 }));
+        }
+        if (segments[5] && request.method === "PUT") {
+          const body = (await request.json().catch(() => null)) as { value?: unknown } | null;
+          if (typeof body?.value !== "string" || !body.value) {
+            return corsify(Response.json({ title: "Body: {\"value\": \"…\"}." }, { status: 400 }));
+          }
+          const stored = await secrets.setSecret(pid, segments[5], body.value);
+          invalidatePool(pid);
+          return corsify(Response.json(stored));
+        }
+        if (segments[5] && request.method === "DELETE") {
+          await secrets.deleteSecret(pid, segments[5]);
+          invalidatePool(pid);
+          return corsify(new Response(null, { status: 204 }));
+        }
+        return corsify(Response.json({ title: "GET list, PUT/DELETE {NAME}." }, { status: 405 }));
+      }
       // Lexical search (AEP-136 :search): POST /v1/projects/{p}/{plural}:search
       // → ranked hits, hydrated through the JIT app so read policies +
       // owner pushdown still apply (search never leaks unauthorized rows).
@@ -512,9 +549,12 @@ export function createHandler(): (request: Request) => Promise<Response> {
           // the gateway's element takes only the card fields. The verified
           // payment.succeeded webhook fires :pay — same money discipline.
           if (co.payment === "embedded") {
-            if (!gateway) return corsify(Response.json({ title: "Embedded payment is not configured." }, { status: 422 }));
+            // The project's own gateway first (spec/secrets.md §2 — the
+            // owner's Stripe), the operator's global one as fallback.
+            const active = (await (await import("./secrets")).projectGateway(pid)) ?? gateway;
+            if (!active) return corsify(Response.json({ title: "Embedded payment is not configured." }, { status: 422 }));
             try {
-              const payment = await gateway.createPayment({
+              const payment = await active.createPayment({
                 amountCents: order.total_cents,
                 currency: order.currency,
                 description: `Order ${order.id.slice(0, 8)}`,
@@ -522,7 +562,7 @@ export function createHandler(): (request: Request) => Promise<Response> {
               });
               return corsify(Response.json({
                 order,
-                payment: { gateway: gateway.name, clientToken: payment.clientToken, client: gateway.clientConfig() },
+                payment: { gateway: active.name, clientToken: payment.clientToken, client: active.clientConfig() },
               }));
             } catch (problem) {
               return corsify(Response.json({ title: (problem as Error).message }, { status: 502 }));
