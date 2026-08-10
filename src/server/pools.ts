@@ -104,5 +104,20 @@ export async function poolPrincipal(
   headers: Headers,
 ): Promise<Principal | null> {
   const pool = await projectPool(projectId);
-  return pool ? withEntitlements(await pool.principal(headers)) : null;
+  const own = pool ? withEntitlements(await pool.principal(headers)) : null;
+  if (own) return own;
+  // Parent-pool OWNER fallback (spec/interface.md): a nested project owned
+  // by `pool:{parent}:{uid}` accepts the PARENT-pool session — but ONLY
+  // when it is THIS child's owner (its userId === created_by). So the
+  // reseller's owner drives the child's interface with a session, while
+  // the reseller's OTHER customers get nothing here. Bounded recursion
+  // walks the ancestry (grandparent pools) for deep nesting.
+  const rows = (await db.select().from(projects).where(eq(projects.id as never, projectId as never)).limit(1)) as {
+    created_by: string | null;
+  }[];
+  const createdBy = rows[0]?.created_by;
+  const match = typeof createdBy === "string" ? /^pool:([^:]+):/.exec(createdBy) : null;
+  if (!match) return null;
+  const parentPrincipal = await poolPrincipal(match[1]!, headers);
+  return parentPrincipal && parentPrincipal.userId === createdBy ? parentPrincipal : null;
 }

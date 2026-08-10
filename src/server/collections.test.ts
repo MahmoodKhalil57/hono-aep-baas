@@ -433,6 +433,16 @@ describe("white-label by composition (auth-pools + keys:mint + project create)",
     expect((await fetch(url("/v1/projects/wl-child/secrets"), { headers: owner })).status).toBe(200);
     // The host's platform owner does NOT own the child (isolation both ways).
     expect((await fetch(url("/v1/projects/wl-child/secrets"), { headers: { ...json, Cookie: cookie } })).status).toBe(403);
+
+    // The parent-pool SESSION owns the child too (spec/interface.md): the
+    // owner drives the interface with a session, not only the sk_ key.
+    expect((await fetch(url("/v1/projects/wl-child/secrets"), { headers: { ...json, Authorization: `Bearer ${poolToken}` } })).status).toBe(200);
+    // But a DIFFERENT host-pool member (not the owner) gets nothing on the child.
+    const other = (await fetch(url(`/v1/projects/${host}/auth/sign-up/email`), {
+      method: "POST", headers: json,
+      body: JSON.stringify({ email: `wl-other-${Date.now()}@example.com`, password: "supersecret1", name: "o" }),
+    })).headers.get("set-auth-token")!;
+    expect([401, 403]).toContain((await fetch(url("/v1/projects/wl-child/secrets"), { headers: { ...json, Authorization: `Bearer ${other}` } })).status); // refused either way
   });
 });
 
