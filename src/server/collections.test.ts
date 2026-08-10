@@ -282,6 +282,49 @@ describe("self-clonability: the platform console is hostable from ANY static ori
   });
 });
 
+describe("CMS-on-CMS: a child project nests under its parent's path", () => {
+  it("/v1/projects/{parent}/projects/{child}/** is the child's whole surface — derived, no flag", async () => {
+    const cookie = await signUp("nest-host");
+    const parent = (await makeProject(cookie, "Nest Host")).split("/")[1]!;
+    await fetch(url(`/v1/projects/${parent}`), {
+      method: "PATCH", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ auth_pool: { emailPassword: { enabled: true } } }),
+    });
+    const poolToken = (await fetch(url(`/v1/projects/${parent}/auth/sign-up/email`), {
+      method: "POST", headers: json,
+      body: JSON.stringify({ email: `nest-cust-${Date.now()}@example.com`, password: "supersecret1", name: "c" }),
+    })).headers.get("set-auth-token")!;
+    const key = ((await (await fetch(url(`/v1/projects/${parent}/keys:mint`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${poolToken}` }, body: "{}",
+    })).json()) as { plaintext: string }).plaintext;
+    await fetch(url(`/v1/projects?id=nest-child`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${key}` }, body: JSON.stringify({ display_name: "Nest Child" }),
+    });
+    const owner = { ...json, Authorization: `Bearer ${key}` };
+
+    // Apply a collection AND read it back BOTH ways — flat and nested — same data.
+    await fetch(url(`/v1/projects/nest-child/collections/widgets`), {
+      method: "PUT", headers: owner,
+      body: JSON.stringify({ definition: { singular: "widget", plural: "widgets", fields: [{ name: "name", type: "string", required: true }], policy_list: "public", policy_get: "public", policy_create: "authenticated" } }),
+    });
+    await fetch(url(`/v1/projects/nest-child/widgets?id=w1`), { method: "POST", headers: owner, body: JSON.stringify({ name: "Nested Widget" }) });
+
+    const flat = await (await fetch(url(`/v1/projects/nest-child/widgets/w1`))).json();
+    const nested = await (await fetch(url(`/v1/projects/${parent}/projects/nest-child/widgets/w1`))).json();
+    expect((nested as { name: string }).name).toBe("Nested Widget");
+    expect(nested).toEqual(flat); // the nested path IS the child, byte-for-byte
+
+    // Owner-gated surfaces work nested with the child key.
+    expect((await fetch(url(`/v1/projects/${parent}/projects/nest-child/secrets`), { headers: owner })).status).toBe(200);
+    // A NON-child can't be addressed under the parent (the derivation gates it).
+    const foreign = (await makeProject(cookie, "Foreign")).split("/")[1]!;
+    expect((await fetch(url(`/v1/projects/${parent}/projects/${foreign}/openapi.json`))).status).toBe(404);
+    // The bare nested collection lists the parent's children.
+    const list = (await (await fetch(url(`/v1/projects/${parent}/projects`))).json()) as { results: { path: string }[] };
+    expect(list.results.map((r) => r.path)).toContain(`projects/${parent}/projects/nest-child`);
+  });
+});
+
 describe("white-label by composition (auth-pools + keys:mint + project create)", () => {
   it("a project's pool member creates and fully owns their own child project — no reseller primitive", async () => {
     // A 'reseller' is just a project that has a pool. No special mode.

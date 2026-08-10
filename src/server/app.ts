@@ -228,6 +228,40 @@ export function createHandler(): (request: Request) => Promise<Response> {
 
   const handleV1 = async (request: Request): Promise<Response> => {
       const url = new URL(request.url);
+      // CMS-on-CMS nesting (baas/reseller-free white-label): a project's
+      // OWN customers' projects are addressable UNDER it —
+      // /v1/projects/{parent}/projects/{child}/** is the child's entire
+      // surface, one namespace deeper. No flag, no stored edge, no infra:
+      // the parent→child link is DERIVED from created_by (a child made by
+      // {parent}'s pool carries `pool:{parent}:…`), so every project is a
+      // sub-CMS for its pool's projects. Recursive by construction — the
+      // rewrite re-enters this handler, so grandchildren nest further.
+      const nest = url.pathname.match(/^\/v1\/projects\/([^/]+)\/projects\/([^/:]+)(\/.*|)$/);
+      if (nest) {
+        const [, parent, child, rest] = nest;
+        const childRows = await db.select().from(projects).where(eq(projects.id, child!)).limit(1);
+        const ownedByParent =
+          typeof childRows[0]?.created_by === "string" && childRows[0].created_by.startsWith(`pool:${parent}:`);
+        if (!ownedByParent) {
+          return corsify(Response.json({ title: `projects/${child} is not a child of projects/${parent}.` }, { status: 404 }));
+        }
+        const inner = new URL(url);
+        inner.pathname = `/v1/projects/${child}${rest ?? ""}`;
+        return handleV1(new Request(inner, request));
+      }
+      // The bare nested collection: a parent's children (derived from
+      // created_by), public — the symmetry with the rewrite above and
+      // what a white-label console lists.
+      const childList = url.pathname.match(/^\/v1\/projects\/([^/]+)\/projects$/);
+      if (childList && request.method === "GET") {
+        const parent = childList[1]!;
+        // created_by carries the uid tail (pool:{parent}:{uid}), so match by prefix.
+        const all = await db.select().from(projects);
+        const mine = all.filter((row) => typeof row.created_by === "string" && row.created_by.startsWith(`pool:${parent}:`));
+        return corsify(Response.json({
+          results: mine.map((row) => ({ path: `projects/${parent}/projects/${row.id}`, display_name: row.display_name, create_time: row.create_time })),
+        }));
+      }
       // JIT dispatch (baas/collections.md): /v1/projects/{p}/{plural}/…
       // where {plural} is not a compiled child → the project's declared
       // collections app (live the moment its document is applied).
