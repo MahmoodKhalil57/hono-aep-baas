@@ -792,6 +792,16 @@ export function createHandler(): (request: Request) => Promise<Response> {
       }
       // Hosted theme serving (baas/site.md §1): one <link> tag restyles the
       // consumer's whole SPA — doubled selectors beat its bundled defaults.
+      // Unified interface (spec/interface.md): the ONE engine at
+      // /v1/projects/{p}/(studio|admin) — same built bundle, the app reads
+      // {project, mode} from the path. Nested children arrive here already
+      // unwrapped by the CMS-on-CMS rewrite at the top of handleV1, so the
+      // parent-nested routes serve the child's interface for free. The
+      // shell's <script>/chunk refs are absolute (Workers Static Assets).
+      if (segments[2] === "projects" && segments[3] && (segments[4] === "studio" || segments[4] === "admin") && !segments[5] && request.method === "GET") {
+        const { studioShellHtml } = await import("./generated/studio-shell");
+        return corsify(new Response(studioShellHtml, { headers: { "Content-Type": "text/html;charset=utf-8", "Cache-Control": "no-cache" } }));
+      }
       if (segments[2] === "projects" && segments[3] && segments[4] === "theme.css" && !segments[5]) {
         const rows = await db.select().from(themes).where(eq(themes.project_id, segments[3])).limit(1);
         if (!rows[0]) return corsify(Response.json({ title: "No theme declared." }, { status: 404 }));

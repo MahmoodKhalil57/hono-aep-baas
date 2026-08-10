@@ -282,6 +282,43 @@ describe("self-clonability: the platform console is hostable from ANY static ori
   });
 });
 
+describe("unified interface (spec/interface.md)", () => {
+  it("the ONE engine serves at /v1/projects/{p}/studio and /admin, and nests", async () => {
+    const cookie = await signUp("iface-owner");
+    const parent = (await makeProject(cookie, "Iface Host")).split("/")[1]!;
+    await fetch(url(`/v1/projects/${parent}`), {
+      method: "PATCH", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ auth_pool: { emailPassword: { enabled: true } } }),
+    });
+    const poolToken = (await fetch(url(`/v1/projects/${parent}/auth/sign-up/email`), {
+      method: "POST", headers: json,
+      body: JSON.stringify({ email: `iface-${Date.now()}@example.com`, password: "supersecret1", name: "c" }),
+    })).headers.get("set-auth-token")!;
+    const key = ((await (await fetch(url(`/v1/projects/${parent}/keys:mint`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${poolToken}` }, body: "{}",
+    })).json()) as { plaintext: string }).plaintext;
+    await fetch(url(`/v1/projects?id=iface-child`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${key}` }, body: JSON.stringify({ display_name: "Child" }),
+    });
+
+    const shell = async (path: string) => {
+      const r = await fetch(url(path));
+      return { status: r.status, type: r.headers.get("Content-Type") ?? "", body: await r.text() };
+    };
+    for (const path of [`/v1/projects/${parent}/studio`, `/v1/projects/${parent}/admin`]) {
+      const s = await shell(path);
+      expect(s.status).toBe(200);
+      expect(s.type).toContain("text/html");
+      expect(s.body).toContain('id="root"'); // the one engine's mount point
+    }
+    // Nested: the child's interface is served UNDER the parent (bastarter's
+    // admin over saastarter3 = saastarter3's studio) — same shell, for free.
+    const nested = await shell(`/v1/projects/${parent}/projects/iface-child/studio`);
+    expect(nested.status).toBe(200);
+    expect(nested.body).toContain('id="root"');
+  });
+});
+
 describe("per-project services (spec/services.md)", () => {
   it("site.services declares payment/delivery/email and validates against the hosted schema", async () => {
     const cookie = await signUp("svc-owner");
