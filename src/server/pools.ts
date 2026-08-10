@@ -104,20 +104,26 @@ export async function poolPrincipal(
   headers: Headers,
 ): Promise<Principal | null> {
   const pool = await projectPool(projectId);
-  const own = pool ? withEntitlements(await pool.principal(headers)) : null;
-  if (own) return own;
-  // Parent-pool OWNER fallback (spec/interface.md): a nested project owned
-  // by `pool:{parent}:{uid}` accepts the PARENT-pool session — but ONLY
-  // when it is THIS child's owner (its userId === created_by). So the
-  // reseller's owner drives the child's interface with a session, while
-  // the reseller's OTHER customers get nothing here. Bounded recursion
-  // walks the ancestry (grandparent pools) for deep nesting.
-  const rows = (await db.select().from(projects).where(eq(projects.id as never, projectId as never)).limit(1)) as {
-    created_by: string | null;
-  }[];
-  const createdBy = rows[0]?.created_by;
+  return pool ? withEntitlements(await pool.principal(headers)) : null;
+}
+
+/**
+ * The management OWNER via a pool session (spec/interface.md): a project
+ * created by a pool member carries `created_by = pool:{ownerPool}:{uid}`.
+ * Resolve the session against THAT pool — the one that owns the project,
+ * which for a nested child is the PARENT's pool — and accept it only when
+ * it is exactly the owner. This is deliberately NOT the child's own pool:
+ * pool sessions aren't tenant-isolated at validation, so the child's pool
+ * would re-tag a foreign token; keying off created_by is what makes it
+ * the OWNER and no one else.
+ */
+export async function ownerPoolPrincipal(
+  projectId: string,
+  createdBy: string | null | undefined,
+  headers: Headers,
+): Promise<Principal | null> {
   const match = typeof createdBy === "string" ? /^pool:([^:]+):/.exec(createdBy) : null;
   if (!match) return null;
-  const parentPrincipal = await poolPrincipal(match[1]!, headers);
-  return parentPrincipal && parentPrincipal.userId === createdBy ? parentPrincipal : null;
+  const principal = await poolPrincipal(match[1]!, headers);
+  return principal && principal.userId === createdBy ? principal : null;
 }

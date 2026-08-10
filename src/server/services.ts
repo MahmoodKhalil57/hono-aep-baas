@@ -75,21 +75,18 @@ export async function principalFrom(c: import("hono").Context): Promise<Principa
   if (base) return withEntitlements(base);
   // Owner-pool fallback (spec/interface.md): a project created by a pool
   // member (composition white-label) is managed by that member's SESSION,
-  // not only its sk_ key — but accepted here ONLY when the pool principal
-  // IS the project's owner (created_by), so a project's END-USERS never
-  // reach its management plane. poolPrincipal walks the parent-pool
-  // ancestry, so a nested child accepts its parent-pool owner too.
+  // not only its sk_ key. Resolve against the pool named in created_by
+  // (the OWNER's pool — the parent's, for a nested child) and accept ONLY
+  // the owner, so a project's END-USERS never reach its management plane.
   const projectId = new URL(c.req.raw.url).pathname.match(/\/projects\/([^/]+)/)?.[1];
   if (!projectId) return null;
-  const { poolPrincipal } = await import("./pools");
-  const pooled = await poolPrincipal(projectId, c.req.raw.headers);
-  if (!pooled) return null;
   const { eq } = await import("drizzle-orm");
   const { projects } = await import("../db/schema");
   const row = (await db.select().from(projects).where(eq(projects.id as never, projectId as never)).limit(1))[0] as
     | { created_by?: string | null }
     | undefined;
-  return row?.created_by === pooled.userId ? pooled : null;
+  const { ownerPoolPrincipal } = await import("./pools");
+  return ownerPoolPrincipal(projectId, row?.created_by, c.req.raw.headers);
 }
 
 /** The resource-event sink shared by every app instance (jobs consumes). */
