@@ -9,6 +9,7 @@ import { formCms } from "../cms/form.cms";
 import { submissionCms } from "../cms/submission.cms";
 import { collectionCms } from "../cms/collection.cms";
 import { domainCms } from "../cms/domain.cms";
+import { kindCms } from "../cms/kind.cms";
 import { themeCms } from "../cms/theme.cms";
 import { pageCms } from "../cms/page.cms";
 import { blockCms } from "../cms/block.cms";
@@ -151,6 +152,7 @@ const RESERVED_PLURALS = new Set([
   "submissions",
   "collections",
   "domains",
+  "kinds",
   "media",
   "deliveries",
   "themes",
@@ -266,6 +268,83 @@ function canonicalThemeCss(slug: string, css: string): string {
 }
 
 /** `projects/{p}/themes/{slug}` — hosted tweakcn documents (baas/site.md §1). */
+/**
+ * `projects/{p}/kinds/{kind}` (baas/kinds.md): the meta-resources this
+ * project's CHILDREN get — the runtime half of the layering that built
+ * hono-aep-baas on hono-aep.
+ *
+ * The apply gate enforces the narrowing law: a shape may be invented
+ * freely, but its `bind` must name a capability this project already holds.
+ * That is what makes the recursion safe at any depth — a layer cannot grant
+ * what it was not granted.
+ */
+async function validateKind(definition: Json, projectId: string): Promise<void> {
+  const bind = String(definition["bind"] ?? "");
+  const singular = String(definition["singular"] ?? "");
+  const plural = String(definition["plural"] ?? "");
+  if (!singular || !plural) {
+    throw invalidKind("a kind needs `singular` and `plural` — the names a child will see.");
+  }
+  if (!bind) {
+    throw invalidKind(
+      "a kind needs `bind`: the inherited capability powering it. Shapes are free, capabilities are inherited (kinds.md §1).",
+    );
+  }
+  const { CATALOG, holds } = await import("./capabilities");
+  if (!CATALOG.has(bind)) {
+    throw invalidKind(
+      `unknown capability '${bind}'. Adding one is a platform change, not a document (kinds.md §6). Known: ${[...CATALOG].sort().join(", ")}.`,
+    );
+  }
+  const held = await holds(projectId);
+  if (!held.has(bind)) {
+    throw invalidKind(
+      `this project does not hold '${bind}', so it cannot grant it (kinds.md §3, narrowing law). It holds: ${[...held].sort().join(", ") || "nothing"}.`,
+    );
+  }
+}
+
+const invalidKind = (detail: string): AepProblem =>
+  new AepProblem({
+    type: "INVALID_ARGUMENT",
+    status: 400,
+    title: "The kind definition is invalid.",
+    detail,
+  });
+
+export const kind = defineResource({
+  ...composable(kindCms),
+  parent: project,
+  hooks: {
+    beforeCreate: async ({ data, parent, honoContext }) => {
+      const principal = principalOf(honoContext)!;
+      const projectId = parent.split("/")[1]!;
+      const rows = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+      if (!rows[0] || rows[0].created_by !== principal.userId) {
+        throw forbidden(`${parent} is not owned by the caller.`);
+      }
+      await validateKind((data["definition"] as Json) ?? {}, projectId);
+      return { ...data, created_by: principal.userId };
+    },
+    beforeApply: async ({ data, previous, parent, honoContext }) => {
+      const principal = principalOf(honoContext)!;
+      const projectId = parent.split("/")[1]!;
+      if (previous) {
+        if (previous["created_by"] !== principal.userId) {
+          throw forbidden("The kind belongs to another account.");
+        }
+      } else {
+        const rows = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+        if (!rows[0] || rows[0].created_by !== principal.userId) {
+          throw forbidden(`${parent} is not owned by the caller.`);
+        }
+      }
+      await validateKind((data["definition"] as Json) ?? {}, projectId);
+      return { ...data, created_by: (previous?.["created_by"] as string) ?? principal.userId };
+    },
+  },
+});
+
 /**
  * `projects/{p}/domains/{host}` (baas/domains.md): the host a surface
  * answers at. Declaring is not owning, so a row lands in PENDING with a

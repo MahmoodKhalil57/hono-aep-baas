@@ -58,6 +58,15 @@ export const domains = sqliteTable("domains", {
   update_time: text("update_time").notNull(),
 }, (table) => [primaryKey({ columns: [table.project_id, table.id] })]);
 
+export const kinds = sqliteTable("kinds", {
+  id: text("id").notNull(),
+  project_id: text("project_id").notNull().references(() => projects.id),
+  definition: text("definition", { mode: "json" }).notNull(),
+  created_by: text("created_by"),
+  create_time: text("create_time").notNull(),
+  update_time: text("update_time").notNull(),
+}, (table) => [primaryKey({ columns: [table.project_id, table.id] })]);
+
 export const themes = sqliteTable("themes", {
   id: text("id").notNull(),
   project_id: text("project_id").notNull().references(() => projects.id),
@@ -95,6 +104,7 @@ export const tables = {
   "submission": submissions,
   "collection": collections,
   "domain": domains,
+  "kind": kinds,
   "theme": themes,
   "page": pages,
   "block": blocks,

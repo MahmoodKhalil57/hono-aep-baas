@@ -11,7 +11,7 @@ import { projectCommerce } from "./commerce";
 import { db } from "../db/registry";
 import { collections, domains, forms, projects, tables, themes } from "../db/schema";
 import { drizzleAepStorage } from "hono-aep-drizzle";
-import { block, collection, domain, form, page, project, submission, theme } from "./resources";
+import { block, collection, domain, form, kind, page, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
 import { studioHtml } from "./studio-page";
 import { projectPool } from "./pools";
@@ -31,13 +31,14 @@ const aep = aepApp({
     submission,
     collection,
     domain,
+    kind,
     theme,
     page,
     block,
     ...(jobs ? [jobs.resource({ policy: "authenticated" })] : []),
     ...(notifications ? [notifications.feedResource()] : []),
   ],
-  storage: drizzleAepStorage({ db, tables, resources: [project, form, submission, collection, domain, theme, page, block] }),
+  storage: drizzleAepStorage({ db, tables, resources: [project, form, submission, collection, domain, kind, theme, page, block] }),
   serviceName: "baas.hono-aep.dev",
   basePath: "/v1",
   ...(authn ? { authorization: { principal: principalFrom } } : {}),

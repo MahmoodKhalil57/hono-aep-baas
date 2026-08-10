@@ -3,7 +3,7 @@ import { aepApp, attachMcp, type AepApp } from "hono-aep";
 import { jsonRowsStorage } from "hono-aep-drizzle";
 import { db } from "../db/registry";
 import { jitProjectApp, type JitProject } from "./jit-collections";
-import { block, collection, domain, form, page, submission, theme } from "./resources";
+import { block, collection, domain, form, kind, page, submission, theme } from "./resources";
 
 /**
  * The project SURFACE (surface.md): one resource model spanning both planes,
@@ -24,7 +24,7 @@ import { block, collection, domain, form, page, submission, theme } from "./reso
  */
 
 /** Definition-plane resources whose parent is the project itself. */
-const DEFINITION_PLURALS = new Set(["collections", "domains", "themes", "pages", "forms", "blocks"]);
+const DEFINITION_PLURALS = new Set(["collections", "domains", "kinds", "themes", "pages", "forms", "blocks"]);
 
 /**
  * Within a surface these are ROOT collections (`/collections`), not children
@@ -40,6 +40,7 @@ const DEFINITION_RESOURCES = (() => {
   return [
     rootless(collection),
     rootless(domain),
+    rootless(kind),
     rootless(theme),
     rootless(page),
     rootless(form),

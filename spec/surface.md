@@ -9,6 +9,10 @@ A project is ONE resource model. Everything a consumer touches — the public
 frontend, the admin, the studio, an agent — is a **projection** of that one
 model. There are exactly two planes and two machine projections:
 
+The definition plane is FIXED today — hardcoded in the surface builder — so
+a project can define its app but not its platform. Making it data-driven,
+so a CMS can build a CMS, is kinds.md; this document assumes the fixed set.
+
 | | definition plane | data plane |
 | --- | --- | --- |
 | **what** | collections, themes, pages, forms, site, services, secrets, keys | the project's JIT collections' rows |

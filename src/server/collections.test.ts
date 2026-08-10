@@ -573,6 +573,90 @@ describe("tenancy: two projects may hold the same slug", () => {
   });
 });
 
+describe("kinds: a CMS that builds a CMS (baas/kinds.md)", () => {
+  it("shapes are free, capabilities are inherited — and may only narrow", async () => {
+    const cookie = await signUp("kinds-host");
+    const platform = (await makeProject(cookie, "A Platform")).split("/")[1]!;
+    const owner = { ...json, Cookie: cookie };
+    const declare = (id: string, definition: Record<string, unknown>) =>
+      fetch(url(`/v1/projects/${platform}/kinds/${id}`), {
+        method: "PUT", headers: owner, body: JSON.stringify({ definition }),
+      });
+
+    // §1: a shape is invented freely — a name the platform never conceived —
+    // so long as it BINDS to a capability this project holds.
+    const invented = await declare("models", {
+      singular: "model", plural: "models", bind: "collection",
+      fields: [{ name: "title", type: "string" }],
+    });
+    expect(invented.status).toBeLessThan(300);
+
+    // §6: `bind` must name a real capability. Inventing a BEHAVIOR is a
+    // platform change, not a document — the bound on "fully data-driven".
+    const magic = await declare("deployers", {
+      singular: "deployer", plural: "deployers", bind: "deploy-to-fly",
+      fields: [{ name: "region", type: "string" }],
+    });
+    expect(magic.status).toBe(400);
+    expect(JSON.stringify(await magic.json())).toContain("unknown capability");
+
+    // §2: a kind is a shape AND a binding; both are required.
+    const shapeless = await declare("widgets", { singular: "widget", plural: "widgets" });
+    expect(shapeless.status).toBe(400);
+    expect(JSON.stringify(await shapeless.json())).toContain("bind");
+
+    // §3 the narrowing law, at the layer below. A child of this platform
+    // holds ONLY what its parent declared — here `collection`, because
+    // `models` is the single kind above it.
+    await fetch(url(`/v1/projects/${platform}`), {
+      method: "PATCH", headers: owner,
+      body: JSON.stringify({ auth_pool: { emailPassword: { enabled: true } } }),
+    });
+    const token = (await fetch(url(`/v1/projects/${platform}/auth/sign-up/email`), {
+      method: "POST", headers: json,
+      body: JSON.stringify({ email: `kc-${Date.now()}@example.com`, password: "supersecret1", name: "c" }),
+    })).headers.get("set-auth-token")!;
+    const key = ((await (await fetch(url(`/v1/projects/${platform}/keys:mint`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${token}` }, body: "{}",
+    })).json()) as { plaintext: string }).plaintext;
+    await fetch(url(`/v1/projects?id=kinds-child`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ display_name: "Customer" }),
+    });
+    const childOwner = { ...json, Authorization: `Bearer ${key}` };
+
+    // The child may re-grant what it received, under its OWN vocabulary.
+    const regranted = await fetch(url(`/v1/projects/kinds-child/kinds/things`), {
+      method: "PUT", headers: childOwner,
+      body: JSON.stringify({ definition: { singular: "thing", plural: "things", bind: "collection" } }),
+    });
+    expect(regranted.status).toBeLessThan(300);
+
+    // …but NOT something its parent never granted. A layer physically
+    // cannot hand a customer a capability it was not handed, which is what
+    // makes depth safe without policing.
+    const overreach = await fetch(url(`/v1/projects/kinds-child/kinds/hosts`), {
+      method: "PUT", headers: childOwner,
+      body: JSON.stringify({ definition: { singular: "host", plural: "hosts", bind: "domain" } }),
+    });
+    expect(overreach.status).toBe(400);
+    expect(JSON.stringify(await overreach.json())).toContain("does not hold");
+  });
+
+  it("declaring no kinds inherits the platform unchanged (the beginner clause)", async () => {
+    // §5: a builder who never opens the file gets today's behavior, so the
+    // concept stays invisible until someone deliberately shapes a platform.
+    const cookie = await signUp("kinds-default");
+    const plain = (await makeProject(cookie, "Plain")).split("/")[1]!;
+    const owner = { ...json, Cookie: cookie };
+    const declared = await fetch(url(`/v1/projects/${plain}/kinds/anything`), {
+      method: "PUT", headers: owner,
+      body: JSON.stringify({ definition: { singular: "anything", plural: "anythings", bind: "domain" } }),
+    });
+    expect(declared.status).toBeLessThan(300); // holds the full catalog
+  });
+});
+
 describe("custom domains (baas/domains.md)", () => {
   // :verify does a real DNS-over-HTTPS lookup; give it room.
   it("declaring a host does not route it — only proof does", { timeout: 20000 }, async () => {
