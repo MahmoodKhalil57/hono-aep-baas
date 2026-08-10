@@ -3,11 +3,12 @@ import { AepProblem, defineResource, type Json } from "hono-aep";
 import { composable, parseThemeCss, printThemeCss, resourceFromDocument } from "hono-aep-cms";
 import { createApiKey } from "hono-aep-auth";
 import { db } from "../db/registry";
-import { collections, forms, projects } from "../db/schema";
+import { collections, domains, forms, projects } from "../db/schema";
 import { projectCms } from "../cms/project.cms";
 import { formCms } from "../cms/form.cms";
 import { submissionCms } from "../cms/submission.cms";
 import { collectionCms } from "../cms/collection.cms";
+import { domainCms } from "../cms/domain.cms";
 import { themeCms } from "../cms/theme.cms";
 import { pageCms } from "../cms/page.cms";
 import { blockCms } from "../cms/block.cms";
@@ -149,6 +150,7 @@ const RESERVED_PLURALS = new Set([
   "forms",
   "submissions",
   "collections",
+  "domains",
   "media",
   "deliveries",
   "themes",
@@ -264,6 +266,140 @@ function canonicalThemeCss(slug: string, css: string): string {
 }
 
 /** `projects/{p}/themes/{slug}` — hosted tweakcn documents (baas/site.md §1). */
+/**
+ * `projects/{p}/domains/{host}` (baas/domains.md): the host a surface
+ * answers at. Declaring is not owning, so a row lands in PENDING with a
+ * minted challenge and routes NOTHING until `:verify` proves control of the
+ * zone. Everything downstream is already base-relative (surface.md §1), so
+ * activation is all it takes for the domain to reach openapi, MCP, the
+ * studio, the admin and the site assets.
+ */
+const CHALLENGE_LABEL = "_hono-aep-challenge";
+
+/** A host belongs to exactly one project: first ACTIVE claim wins. */
+const assertHostUnclaimed = async (host: string, parent: string): Promise<void> => {
+  const projectId = parent.split("/")[1]!;
+  const rows = (await db.select().from(domains).where(eq(domains.id as never, host as never))) as unknown as {
+    id: string; project_id?: string | null; state?: string | null;
+  }[];
+  const taken = rows.find((row) => row.project_id !== projectId && row.state === "ACTIVE");
+  if (taken) {
+    throw new AepProblem({
+      type: "ALREADY_EXISTS", status: 409,
+      title: "The host is claimed by another project.",
+      detail: `${host} is already ACTIVE elsewhere. Release it there first.`,
+    });
+  }
+};
+
+/**
+ * Resolve the challenge TXT over DoH — Workers have no raw DNS. Bounded:
+ * `:verify` is a user-facing call, and an unreachable or slow resolver must
+ * fail closed (no proof) rather than hang the request.
+ */
+const readChallengeTxt = async (host: string): Promise<string[]> => {
+  try {
+    const response = await fetch(
+      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(`${CHALLENGE_LABEL}.${host}`)}&type=TXT`,
+      { headers: { Accept: "application/dns-json" }, signal: AbortSignal.timeout(5000) },
+    );
+    if (!response.ok) return [];
+    const body = (await response.json()) as { Answer?: { type: number; data: string }[] };
+    return (body.Answer ?? [])
+      .filter((answer) => answer.type === 16)
+      .map((answer) => answer.data.trim().replace(/^"|"$/g, ""));
+  } catch {
+    return [];
+  }
+};
+
+export const domain = defineResource({
+  ...composable(domainCms),
+  parent: project,
+  hooks: {
+    beforeCreate: async ({ data, parent, id, honoContext }) => {
+      const principal = principalOf(honoContext)!;
+      const rows = await db.select().from(projects).where(eq(projects.id, parent.split("/")[1]!)).limit(1);
+      if (!rows[0] || rows[0].created_by !== principal.userId) {
+        throw forbidden(`${parent} is not owned by the caller.`);
+      }
+      await assertHostUnclaimed(String(id ?? ""), parent);
+      return {
+        ...data,
+        // Output-only: the client never chooses its own proof.
+        challenge: `hono-aep-domain-verification=${crypto.randomUUID()}`,
+        verified_time: undefined,
+        last_error: undefined,
+        created_by: principal.userId,
+      };
+    },
+    /**
+     * The proof fields are OUTPUT-ONLY, and an ordinary update is the back
+     * door that would otherwise let a caller choose its own challenge (and
+     * so aim verification at a TXT record it can already publish). Pin them
+     * to what the server last wrote.
+     */
+    beforeUpdate: ({ data, previous }) => ({
+      ...data,
+      challenge: previous?.["challenge"],
+      verified_time: previous?.["verified_time"],
+      last_error: previous?.["last_error"],
+      created_by: previous?.["created_by"],
+    }),
+    beforeApply: async ({ data, previous, parent, id, honoContext }) => {
+      const principal = principalOf(honoContext)!;
+      if (previous && previous["created_by"] !== principal.userId) {
+        throw forbidden("The domain belongs to another account.");
+      }
+      if (!previous) {
+        const rows = await db.select().from(projects).where(eq(projects.id, parent.split("/")[1]!)).limit(1);
+        if (!rows[0] || rows[0].created_by !== principal.userId) {
+          throw forbidden(`${parent} is not owned by the caller.`);
+        }
+        await assertHostUnclaimed(String(id ?? ""), parent);
+      }
+      // Re-applying MUST NOT let a caller hand itself a challenge, a
+      // verification time, or (via config) an ACTIVE state.
+      return {
+        ...data,
+        challenge: (previous?.["challenge"] as string) ?? `hono-aep-domain-verification=${crypto.randomUUID()}`,
+        verified_time: previous?.["verified_time"],
+        last_error: previous?.["last_error"],
+        created_by: (previous?.["created_by"] as string) ?? principal.userId,
+      };
+    },
+  },
+  customMethods: [
+    {
+      verb: "verify",
+      description:
+        "Resolve the challenge TXT at `_hono-aep-challenge.{host}` and, on a match, activate the domain so it begins routing. Publish the record first; re-run after DNS propagates.",
+      handler: async ({ resource, id, save }) => {
+        const expected = String(resource["challenge"] ?? "");
+        const found = await readChallengeTxt(id);
+        if (!expected) {
+          return await save({ state: "FAILED", last_error: "No challenge on the record; recreate the domain." });
+        }
+        if (!found.includes(expected)) {
+          // A tool error the model can act on, not a protocol failure.
+          return await save({
+            state: resource["state"] === "ACTIVE" ? "PENDING" : "PENDING",
+            last_error:
+              found.length === 0
+                ? `No TXT record at ${CHALLENGE_LABEL}.${id}. Publish the challenge value, then retry.`
+                : `TXT at ${CHALLENGE_LABEL}.${id} did not match the challenge (${found.length} record(s) found).`,
+          });
+        }
+        return await save({
+          state: "ACTIVE",
+          verified_time: new Date().toISOString(),
+          last_error: undefined,
+        });
+      },
+    },
+  ],
+});
+
 export const theme = defineResource({
   ...composable(themeCms),
   parent: project,

@@ -29,15 +29,20 @@ Kubernetes-style, generated from the seams: `/livez` (process alive),
 the storage seam), not hand-written per app — tracked as a PLANNED
 branch on the observability kind.
 
-## 3. Per-project MCP (phase 2)
+## 3. Per-project MCP
 
 Every project gets its own MCP endpoint, generated from ITS contract —
 the suite's bridge already derives tools from the contract, so this is
 key-scoping plus routing, not new machinery. A form owner points an
-agent at `/projects/{project}/mcp` with an `sk_` key and the agent can
-read submissions, manage forms, and drive transitions under the same
+agent at `{BASE}/mcp` with an `sk_` key and the agent can read
+submissions, manage forms, and drive transitions under the same
 policies as HTTP callers (aep/mcp safety model: profiles,
 permission-filtered advertisement).
+
+**Normative detail lives in `surface.md`** — the per-project MCP endpoint
+and the dynamic `openapi.json` are the two machine projections of one
+resource model, both spanning the definition and data planes, both
+base-relative so they recurse through nested projects at any depth.
 
 PLANNED beyond keys: MCP OAuth per the MCP authorization spec —
 `/.well-known/oauth-protected-resource` discovery so browser-authorized

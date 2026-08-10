@@ -92,7 +92,7 @@ a `TODO(baas)` marker at their definition site in the suite specs
 | Access keys | authn apiKeys (baas/keys.md) | 1 |
 | Captcha/challenge | forms.md §2 (new binding) | 2 |
 | Counters (`:increment`, SVG badge) | counters.md | 2 |
-| Per-project MCP endpoint | aep/mcp bridge (implemented) + keys (agents.md §3) | 2 |
+| Per-project MCP endpoint | aep/mcp bridge + surface.md (implemented: `{BASE}/mcp`, both planes, nests) | 1 |
 | Git config sync (`sync diff/push/pull`) | baas/sync.md — Apply-driven, sk_ auth | 2 |
 | Idempotent data seed (`seed diff/push/pull/destroy`, lock ledger, demo principals) | baas/seed.md — the data-plane sibling of sync | 2 |
 | Embedded in-page payment (neutral gateway, swappable drivers) | gateway spec (hono-aep-gateway) + commerce.md §3.2 | 3 |

@@ -120,4 +120,4 @@ export type JitProject = ReturnType<typeof aepApp> & {
 };
 
 /** Compiled child plurals the dispatcher must never intercept. */
-export const COMPILED_CHILD_PLURALS = new Set(["forms", "collections", "themes", "pages", "blocks", "auth", "media", "deliveries", "openapi.json"]);
+export const COMPILED_CHILD_PLURALS = new Set(["forms", "collections", "domains", "themes", "pages", "blocks", "auth", "media", "deliveries", "openapi.json", "mcp"]);

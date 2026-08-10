@@ -27,7 +27,15 @@ public, self-describing API.
    - `GET {BASE}/schemas/rows/{plural}.json` — per-collection SEED-ROW
      schemas, generated from the live definition (fetch-only: they
      change whenever the definition does).
-   - `{BASE}/mcp` — the project MCP server, same contract for agents.
+   - `{BASE}/mcp` — the project MCP server: stateless MCP `2026-07-28`,
+     one POST per JSON-RPC message. Every request carries
+     `_meta["io.modelcontextprotocol/protocolVersion"]` +
+     `["io.modelcontextprotocol/clientCapabilities"]` and mirrors them in
+     the `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` headers. Call
+     `describe` first: it spans BOTH planes — `plane:"definition"`
+     (collections/themes/pages/forms — what the studio edits) and
+     `plane:"data"` (rows — what the admin and the site read). There is no
+     `initialize` handshake and no session.
 3. Maintenance loop: `./cli.sh` (or `bunx hono-aep-baas-cli`) —
    `sync|seed|secrets|validate`, keys from `.owner-creds.json`, secret
    values from `.platform-creds.json` (both gitignored, repo root).

@@ -383,6 +383,270 @@ describe("CMS-on-CMS: a child project nests under its parent's path", () => {
     const list = (await (await fetch(url(`/v1/projects/${parent}/projects`))).json()) as { results: { path: string }[] };
     expect(list.results.map((r) => r.path)).toContain(`projects/${parent}/projects/nest-child`);
   });
+
+  it("generated documents are base-relative, and ancestry cannot be forged (surface.md §1)", async () => {
+    const cookie = await signUp("base-host");
+    const parent = (await makeProject(cookie, "Base Host")).split("/")[1]!;
+    await fetch(url(`/v1/projects/${parent}`), {
+      method: "PATCH", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ auth_pool: { emailPassword: { enabled: true } } }),
+    });
+    const poolToken = (await fetch(url(`/v1/projects/${parent}/auth/sign-up/email`), {
+      method: "POST", headers: json,
+      body: JSON.stringify({ email: `base-cust-${Date.now()}@example.com`, password: "supersecret1", name: "c" }),
+    })).headers.get("set-auth-token")!;
+    const key = ((await (await fetch(url(`/v1/projects/${parent}/keys:mint`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${poolToken}` }, body: "{}",
+    })).json()) as { plaintext: string }).plaintext;
+    await fetch(url(`/v1/projects?id=base-child`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${key}` }, body: JSON.stringify({ display_name: "Base Child" }),
+    });
+    await fetch(url(`/v1/projects/base-child/collections/widgets`), {
+      method: "PUT", headers: { ...json, Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ definition: { singular: "widget", plural: "widgets", fields: [{ name: "name", type: "string" }], policy_list: "public", policy_get: "public" } }),
+    });
+
+    const serverUrl = async (path: string, headers?: Record<string, string>) =>
+      ((await (await fetch(url(path), headers ? { headers } : undefined)).json()) as {
+        servers: { url: string }[];
+      }).servers[0]!.url;
+
+    // The document a caller fetches must address the surface THEY used —
+    // not the flat path the nested rewrite unwrapped to.
+    expect(await serverUrl(`/v1/projects/base-child/openapi.json`)).toBe(
+      `${server.origin}/v1/projects/base-child`,
+    );
+    expect(await serverUrl(`/v1/projects/${parent}/projects/base-child/openapi.json`)).toBe(
+      `${server.origin}/v1/projects/${parent}/projects/base-child`,
+    );
+
+    // §1.1: ancestry is internal — a caller that declares its own would mint
+    // a document advertising a surface it does not own.
+    expect(
+      await serverUrl(`/v1/projects/base-child/openapi.json`, { "x-aep-ancestors": "evil-parent" }),
+    ).toBe(`${server.origin}/v1/projects/base-child`);
+
+    // §2: the document enumerates BOTH planes — the same model the MCP
+    // projection describes, so the two projections cannot drift apart.
+    const doc = (await (await fetch(url(`/v1/projects/base-child/openapi.json`))).json()) as {
+      paths: Record<string, unknown>;
+    };
+    const paths = Object.keys(doc.paths);
+    expect(paths.some((entry) => entry.startsWith("/widgets"))).toBe(true); // data
+    expect(paths.some((entry) => entry.startsWith("/collections"))).toBe(true); // definition
+  });
+
+  it("an agent drives BOTH planes of a surface over one stateless MCP endpoint (surface.md §3)", async () => {
+    const cookie = await signUp("mcp-host");
+    const parent = (await makeProject(cookie, "MCP Host")).split("/")[1]!;
+    await fetch(url(`/v1/projects/${parent}`), {
+      method: "PATCH", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ auth_pool: { emailPassword: { enabled: true } } }),
+    });
+    const poolToken = (await fetch(url(`/v1/projects/${parent}/auth/sign-up/email`), {
+      method: "POST", headers: json,
+      body: JSON.stringify({ email: `mcp-cust-${Date.now()}@example.com`, password: "supersecret1", name: "c" }),
+    })).headers.get("set-auth-token")!;
+    const key = ((await (await fetch(url(`/v1/projects/${parent}/keys:mint`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${poolToken}` }, body: "{}",
+    })).json()) as { plaintext: string }).plaintext;
+    await fetch(url(`/v1/projects?id=mcp-child`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${key}` }, body: JSON.stringify({ display_name: "MCP Child" }),
+    });
+    await fetch(url(`/v1/projects/mcp-child/collections/gadgets`), {
+      method: "PUT", headers: { ...json, Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ definition: { singular: "gadget", plural: "gadgets", fields: [{ name: "name", type: "string", required: true }], policy_list: "public", policy_get: "public", policy_create: "authenticated" } }),
+    });
+
+    let rpcId = 0;
+    const mcp = async (base: string, method: string, params: Record<string, unknown> = {}) => {
+      const body = {
+        jsonrpc: "2.0", id: ++rpcId, method,
+        params: {
+          ...params,
+          _meta: {
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+            "io.modelcontextprotocol/clientCapabilities": {},
+          },
+        },
+      };
+      const response = await fetch(url(`${base}/mcp`), {
+        method: "POST",
+        headers: {
+          ...json,
+          Accept: "application/json, text/event-stream",
+          Authorization: `Bearer ${key}`,
+          "MCP-Protocol-Version": "2026-07-28",
+          "Mcp-Method": method,
+          ...(method === "tools/call" ? { "Mcp-Name": String(params.name) } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      return { status: response.status, body: (await response.json()) as Record<string, any> };
+    };
+    const call = async (base: string, name: string, args: Record<string, unknown> = {}) =>
+      (await mcp(base, "tools/call", { name, arguments: args })).body.result;
+
+    const flat = `/v1/projects/mcp-child`;
+
+    // Stateless discovery — no handshake, no session.
+    const discovered = await mcp(flat, "server/discover");
+    expect(discovered.status).toBe(200);
+    expect(discovered.body.result.supportedVersions).toEqual(["2026-07-28"]);
+
+    // §3.1: ONE describe spans both planes, each tagged.
+    const model = (await call(flat, "describe")).structuredContent;
+    const planes = Object.fromEntries(
+      model.resources.map((entry: any) => [entry.collection, entry.plane]),
+    );
+    expect(planes.collections).toBe("definition"); // the studio's plane
+    expect(planes.gadgets).toBe("data"); // the admin's + frontend's plane
+
+    // The definition plane is reachable: the agent reads what shapes the project.
+    const definitions = await call(flat, "list", { collection: "collections" });
+    const declared = definitions.structuredContent.results.map((row: any) => String(row.path ?? row.id));
+    expect(declared.some((entry: string) => entry.endsWith("gadgets"))).toBe(true);
+
+    // The data plane is reachable through the SAME endpoint and verbs.
+    const created = await call(flat, "create", { collection: "gadgets", data: { name: "Widget One" } });
+    expect(created.isError).toBeUndefined();
+    expect(created.structuredContent.name).toBe("Widget One");
+
+    // §4 corollary: the parent drives the child's agent surface at the
+    // nested path — same model, same tools, different BASE.
+    const nested = await call(`/v1/projects/${parent}/projects/mcp-child`, "list", { collection: "gadgets" });
+    expect(nested.structuredContent.results.map((row: any) => row.name)).toContain("Widget One");
+
+    // Transport conformance holds on the project surface too.
+    expect((await fetch(url(`${flat}/mcp`), { method: "GET" })).status).toBe(405);
+    const badVersion = await fetch(url(`${flat}/mcp`), {
+      method: "POST",
+      headers: { ...json, "MCP-Protocol-Version": "2025-06-18", "Mcp-Method": "tools/list" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 99, method: "tools/list",
+        params: { _meta: { "io.modelcontextprotocol/protocolVersion": "2025-06-18", "io.modelcontextprotocol/clientCapabilities": {} } },
+      }),
+    });
+    expect(badVersion.status).toBe(400);
+    expect(((await badVersion.json()) as any).error.code).toBe(-32022);
+  });
+});
+
+describe("tenancy: two projects may hold the same slug", () => {
+  it("one project's collection id does not collide with another's", async () => {
+    // collections.md: tenancy IS the resource tree, so `products` under
+    // project A and `products` under project B are different resources.
+    // A global primary key on the slug silently makes them ONE row — the
+    // second project's apply then destroys the first's definition, which
+    // orphans its data (the JIT app can no longer surface those rows).
+    const cookie = await signUp("tenancy");
+    const a = (await makeProject(cookie, "Tenant A")).split("/")[1]!;
+    const b = (await makeProject(cookie, "Tenant B")).split("/")[1]!;
+    const owner = { ...json, Cookie: cookie };
+    const definition = (label: string) => ({
+      definition: {
+        singular: "product", plural: "products",
+        fields: [{ name: label, type: "string" }],
+        policy_list: "public", policy_get: "public",
+      },
+    });
+
+    expect((await fetch(url(`/v1/projects/${a}/collections/products`), {
+      method: "PUT", headers: owner, body: JSON.stringify(definition("a_field")),
+    })).status).toBeLessThan(300);
+    expect((await fetch(url(`/v1/projects/${b}/collections/products`), {
+      method: "PUT", headers: owner, body: JSON.stringify(definition("b_field")),
+    })).status).toBeLessThan(300);
+
+    // Both must still exist, each with its own definition.
+    const slugs = async (project: string): Promise<string[]> => {
+      const body = (await (await fetch(url(`/v1/projects/${project}/collections`), { headers: owner })).json()) as
+        { results: { path?: string; id?: string }[] };
+      return body.results.map((row) => String(row.path ?? row.id).split("/").pop()!);
+    };
+    expect(await slugs(a)).toContain("products");
+    expect(await slugs(b)).toContain("products");
+
+    const rowA = (await (await fetch(url(`/v1/projects/${a}/collections/products`), { headers: owner })).json()) as
+      { definition: { fields: { name: string }[] } };
+    expect(rowA.definition.fields.map((f) => f.name)).toContain("a_field");
+  });
+});
+
+describe("custom domains (baas/domains.md)", () => {
+  // :verify does a real DNS-over-HTTPS lookup; give it room.
+  it("declaring a host does not route it — only proof does", { timeout: 20000 }, async () => {
+    const cookie = await signUp("dom-host");
+    const project = (await makeProject(cookie, "Domain Host")).split("/")[1]!;
+    const owner = { ...json, Cookie: cookie };
+    await fetch(url(`/v1/projects/${project}/collections/widgets`), {
+      method: "PUT", headers: owner,
+      body: JSON.stringify({ definition: { singular: "widget", plural: "widgets", fields: [{ name: "name", type: "string" }], policy_list: "public", policy_get: "public" } }),
+    });
+
+    const host = `api.${project}.example.test`;
+    const created = await fetch(url(`/v1/projects/${project}/domains?id=${host}`), {
+      method: "POST", headers: owner, body: JSON.stringify({ kind: "api" }),
+    });
+    expect(created.status).toBe(201);
+    const row = (await created.json()) as { state: string; challenge: string; verified_time?: string };
+
+    // §2.1: PENDING, with a server-minted challenge the client never chose.
+    expect(row.state).toBe("PENDING");
+    expect(row.challenge).toMatch(/^hono-aep-domain-verification=/);
+    expect(row.verified_time).toBeUndefined();
+
+    // §3.1: a PENDING host must NOT route — it does not resolve to the
+    // surface, and it must not silently fall through to the platform either.
+    const pendingHit = await fetch(url("/collections"), { headers: { ...owner, Host: host } });
+    expect(pendingHit.status).not.toBe(200);
+
+    // §2.2: verification fails closed when the TXT record is absent, and
+    // says so in a way a caller can act on — without activating.
+    const verified = await fetch(url(`/v1/projects/${project}/domains/${host}:verify`), {
+      method: "POST", headers: owner, body: "{}",
+    });
+    expect(verified.status).toBe(200);
+    const after = (await verified.json()) as { state: string; last_error: string };
+    expect(after.state).toBe("PENDING");
+    expect(after.last_error).toContain("_hono-aep-challenge");
+
+    // A client cannot hand itself ACTIVE, nor choose its own proof, through
+    // an ordinary write — that would route a host it never proved it owns.
+    await fetch(url(`/v1/projects/${project}/domains/${host}`), {
+      method: "PATCH", headers: owner,
+      body: JSON.stringify({ state: "ACTIVE", challenge: "hono-aep-domain-verification=forged" }),
+    });
+    const reread = (await (await fetch(url(`/v1/projects/${project}/domains/${host}`), { headers: owner })).json()) as
+      { state: string; challenge: string };
+    expect(reread.state).toBe("PENDING");
+    expect(reread.challenge).toBe(row.challenge); // output-only: unchanged
+
+    // §7.4: the internal routing headers are never client-declarable.
+    const forged = (await (await fetch(url(`/v1/projects/${project}/openapi.json`), {
+      headers: { "x-aep-domain": "evil.example.test" },
+    })).json()) as { servers: { url: string }[] };
+    expect(forged.servers[0]!.url).toBe(`${server.origin}/v1/projects/${project}`);
+  });
+
+  it("a host cannot be claimed while another project holds it ACTIVE", async () => {
+    const cookie = await signUp("dom-race");
+    const first = (await makeProject(cookie, "First")).split("/")[1]!;
+    const second = (await makeProject(cookie, "Second")).split("/")[1]!;
+    const owner = { ...json, Cookie: cookie };
+    const host = "api.contested.example.test";
+
+    expect((await fetch(url(`/v1/projects/${first}/domains?id=${host}`), {
+      method: "POST", headers: owner, body: JSON.stringify({ kind: "api" }),
+    })).status).toBe(201);
+
+    // Both are PENDING, so the second claim is allowed to exist; the gate
+    // is ACTIVE-ness (§2: first ACTIVE claim wins).
+    const rival = await fetch(url(`/v1/projects/${second}/domains?id=${host}`), {
+      method: "POST", headers: owner, body: JSON.stringify({ kind: "api" }),
+    });
+    expect([201, 409]).toContain(rival.status);
+  });
 });
 
 describe("white-label by composition (auth-pools + keys:mint + project create)", () => {

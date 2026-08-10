@@ -9,9 +9,9 @@ import { fallbackChain, localizationConfigSchema, localizeRow, parseThemeCss, re
 import { contextOf } from "hono-aep-flags";
 import { projectCommerce } from "./commerce";
 import { db } from "../db/registry";
-import { collections, forms, projects, tables, themes } from "../db/schema";
+import { collections, domains, forms, projects, tables, themes } from "../db/schema";
 import { drizzleAepStorage } from "hono-aep-drizzle";
-import { block, collection, form, page, project, submission, theme } from "./resources";
+import { block, collection, domain, form, page, project, submission, theme } from "./resources";
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
 import { studioHtml } from "./studio-page";
 import { projectPool } from "./pools";
@@ -30,19 +30,88 @@ const aep = aepApp({
     form,
     submission,
     collection,
+    domain,
     theme,
     page,
     block,
     ...(jobs ? [jobs.resource({ policy: "authenticated" })] : []),
     ...(notifications ? [notifications.feedResource()] : []),
   ],
-  storage: drizzleAepStorage({ db, tables, resources: [project, form, submission, collection, theme, page, block] }),
+  storage: drizzleAepStorage({ db, tables, resources: [project, form, submission, collection, domain, theme, page, block] }),
   serviceName: "baas.hono-aep.dev",
   basePath: "/v1",
   ...(authn ? { authorization: { principal: principalFrom } } : {}),
   ...(eventSink ? { onEvent: eventSink } : {}),
 });
 attachMcp(aep, { name: "mizan-gpp" });
+
+/**
+ * Nested surfaces (surface.md §1.1): the CMS-on-CMS rewrite unwraps
+ * /v1/projects/{a}/projects/{b}/** to the flat /v1/projects/{b}/**, so the
+ * caller-visible base is destroyed BY DESIGN — that is what makes nesting
+ * free. The ancestor chain carries it alongside, so every generator can stay
+ * base-relative (the recursion law) at any depth.
+ *
+ * INTERNAL state: stripped from every ingress request and appended only by
+ * the ownership-verified rewrite. A caller able to declare its own ancestry
+ * could mint documents advertising a surface it does not own.
+ */
+const ANCESTORS_HEADER = "x-aep-ancestors";
+
+const ancestorsOf = (request: Request): string[] =>
+  (request.headers.get(ANCESTORS_HEADER) ?? "").split(",").filter(Boolean);
+
+/**
+ * A custom origin (domains.md §3) is the third spelling of BASE. When the
+ * request arrived on one, the base is that origin with an EMPTY path prefix
+ * — plus any nesting reached under it — so generators keep advertising the
+ * alias the caller actually used.
+ */
+const DOMAIN_HEADER = "x-aep-domain";
+
+/** The caller-visible project base — nesting is a pure prefix. */
+const surfaceBase = (request: Request, projectId: string): string => {
+  const nesting = ancestorsOf(request).map((id) => `/projects/${id}`).join("");
+  const onDomain = request.headers.get(DOMAIN_HEADER);
+  // On a custom origin the surface IS the root; deeper projects still nest
+  // under it, but the domain's own project contributes no path segment.
+  if (onDomain) return nesting ? `${nesting}/projects/${projectId}` : "";
+  return `/v1${nesting}/projects/${projectId}`;
+};
+
+const stripInternal = (request: Request): Request => {
+  if (!request.headers.has(ANCESTORS_HEADER) && !request.headers.has(DOMAIN_HEADER)) return request;
+  const headers = new Headers(request.headers);
+  headers.delete(ANCESTORS_HEADER);
+  headers.delete(DOMAIN_HEADER);
+  return new Request(request, { headers });
+};
+
+/**
+ * Host → surface (domains.md §3). DNS cannot express this mapping: it has
+ * no paths, and workers.dev answers only for its own name. So the worker
+ * resolves it — an ACTIVE `api` domain rewrites the request onto that
+ * project's platform path, and everything downstream is unchanged.
+ *
+ * Only ACTIVE routes. A PENDING host must NOT fall through to the platform
+ * surface: serving an unverified name is what a takeover looks like.
+ */
+const domainSurface = async (host: string): Promise<{ project: string } | "unverified" | null> => {
+  if (!host) return null;
+  const rows = (await db
+    .select()
+    .from(domains)
+    .where(eq(domains.id as never, host.toLowerCase().split(":")[0]! as never))) as unknown as {
+    project_id?: string | null; state?: string | null; kind?: string | null;
+  }[];
+  const active = rows.find((row) => row.state === "ACTIVE" && row.kind === "api");
+  if (active?.project_id) return { project: active.project_id };
+  // §3.1: a host that has been CLAIMED but not proven must not fall through
+  // to the platform surface. Serving anything on an unverified name is how
+  // a takeover is made to look legitimate.
+  return rows.length > 0 ? "unverified" : null;
+};
+
 
 const probes = createHealthProbes({
   version: "0.1.0",
@@ -247,7 +316,11 @@ export function createHandler(): (request: Request) => Promise<Response> {
         }
         const inner = new URL(url);
         inner.pathname = `/v1/projects/${child}${rest ?? ""}`;
-        return handleV1(new Request(inner, request));
+        // surface.md §1.1: append the verified parent so the innermost
+        // handler can rebuild the caller-visible base.
+        const forwarded = new Request(inner, request);
+        forwarded.headers.set(ANCESTORS_HEADER, [...ancestorsOf(request), parent!].join(","));
+        return handleV1(forwarded);
       }
       // The bare nested collection: a parent's children (derived from
       // created_by), public — the symmetry with the rewrite above and
@@ -773,15 +846,31 @@ export function createHandler(): (request: Request) => Promise<Response> {
       // JIT app's contract — the white-label admin reads THIS. Public so
       // the static SPA can build its admin model.
       if (segments[2] === "projects" && segments[3] && segments[4] === "openapi.json" && !segments[5]) {
-        const jit = await jitProjectApp(segments[3]);
-        if (!jit) return corsify(Response.json({ title: "No collections declared." }, { status: 404 }));
-        const doc = await openApiDocument(jit, {
+        // surface.md §2: the document enumerates BOTH planes, so it is
+        // generated from the SURFACE (definitions + data), not the JIT app
+        // alone — the same model the MCP projection describes.
+        const { projectSurfaceApp } = await import("./surface");
+        const surface = await projectSurfaceApp(segments[3], aep);
+        if (!surface) return corsify(Response.json({ title: "No collections declared." }, { status: 404 }));
+        const doc = await openApiDocument(surface.contract, {
           title: `${segments[3]} (mizan-gpp)`,
           version: "1.0.0",
-          description: "Per-project AEP contract — hosted collections.",
-          servers: [{ url: `${url.origin}/v1/projects/${segments[3]}` }],
+          description: "Per-project AEP contract — the definition and data planes of one surface.",
+          // surface.md §1: the BASE the CALLER used, not the rewritten flat
+          // path — a nested document must address the nested surface.
+          servers: [{ url: `${url.origin}${surfaceBase(request, segments[3])}` }],
         });
         return corsify(Response.json(doc));
+      }
+      // Per-project MCP (surface.md §3): the agent projection of this
+      // surface — both planes, seven generic verbs, stateless. Nested
+      // children arrive here already unwrapped, so a parent drives its
+      // child's agent surface at the same path one level deeper.
+      if (segments[2] === "projects" && segments[3] && segments[4] === "mcp" && !segments[5]) {
+        const { projectSurfaceApp } = await import("./surface");
+        const surface = await projectSurfaceApp(segments[3], aep);
+        if (!surface) return corsify(Response.json({ title: "No collections declared." }, { status: 404 }));
+        return corsify(await surface.mcp.app.fetch(new Request(`${url.origin}/mcp${url.search}`, request)));
       }
       // END-USER auth pools (auth-pools.md): better-auth mounted per
       // project, bearer-first; basePath matches, so no path rewriting.
@@ -948,8 +1037,36 @@ export function createHandler(): (request: Request) => Promise<Response> {
         ),
       );
   };
-  return async (request: Request): Promise<Response> => {
+  return async (incoming: Request): Promise<Response> => {
+    // TRUE INGRESS — the one place internal routing state is scrubbed
+    // (surface.md §1.1, domains.md §7.4). Ancestry and the domain marker
+    // are appended only by ownership-verified rewrites below; a caller that
+    // could declare either would mint documents advertising, or route
+    // itself into, a surface it does not own.
+    const request = stripInternal(incoming);
     const url = new URL(request.url);
+    // Custom origins (domains.md §3): resolve Host → surface BEFORE
+    // routing, then continue on the platform path. The domain marker rides
+    // along so generators re-emit the origin the caller used instead of the
+    // platform path this rewrite produced.
+    const host = request.headers.get("host") ?? url.host;
+    if (!url.pathname.startsWith("/v1/projects/")) {
+      const resolved = await domainSurface(host);
+      if (resolved === "unverified") {
+        return corsify(Response.json(
+          { title: "This domain is not verified.", detail: `${host} is claimed but not ACTIVE; publish its challenge TXT and call :verify.` },
+          { status: 404 },
+        ));
+      }
+      if (resolved) {
+        const inner = new URL(url);
+        const suffix = url.pathname === "/" ? "" : url.pathname;
+        inner.pathname = `/v1/projects/${resolved.project}${suffix}`;
+        const forwarded = new Request(inner, stripInternal(request));
+        forwarded.headers.set(DOMAIN_HEADER, host);
+        return corsify(await routes["/v1/*"](forwarded));
+      }
+    }
     const path = url.pathname;
     // /submit/:key
     const submitMatch = /^\/submit\/([^/]+)$/.exec(path);
