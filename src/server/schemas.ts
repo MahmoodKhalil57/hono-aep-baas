@@ -125,6 +125,16 @@ const SITE: Json = {
       additionalProperties: false,
     },
     assets: SITE_ASSETS,
+    services: {
+      type: "object",
+      description: "Per-project service selection (spec/services.md): which driver runs each capability; keys live in the project's secrets.",
+      properties: {
+        payment: { type: "object", properties: { provider: { type: "string", enum: ["stripe"], description: "Keys: STRIPE_SECRET_KEY + STRIPE_PUBLISHABLE_KEY (+ STRIPE_WEBHOOK_SECRET)." } }, additionalProperties: false },
+        delivery: { type: "object", properties: { provider: { type: "string", enum: ["download"], description: "Virtual downloads; courier drivers are platform-owner additions." } }, additionalProperties: false },
+        email: { type: "object", properties: { provider: { type: "string", enum: ["local", "resend"], description: "resend needs RESEND_API_KEY in secrets; local = operator default." }, from: { type: "string" }, replyTo: { type: "string" } }, additionalProperties: false },
+      },
+      additionalProperties: false,
+    },
   },
 };
 

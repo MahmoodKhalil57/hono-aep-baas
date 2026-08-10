@@ -73,7 +73,10 @@ export function projectCommerce(projectId: string): Commerce {
       if (notifications) {
         const lines = products.map((i) => `${i.quantity}× ${i.name ?? "item"}`).join(", ");
         await notifications.notify({
-          to: { email: "orders@saastarter2.example" },
+          // scope routes delivery to THIS project's email provider + key
+          // (spec/services.md): resend with the project's RESEND_API_KEY.
+          scope,
+          to: { email: ((d as { customer_email?: string }).customer_email) || "orders@example.com" },
           content: { subject: `Order ${d.order_id} confirmed`, body: `Paid: ${lines} — total ${(d.total_cents ?? 0) / 100} USD.` },
           channels: ["email"],
         }).catch(() => {});

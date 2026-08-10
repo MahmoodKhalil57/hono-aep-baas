@@ -54,7 +54,13 @@ export const jobs: JobsEngine | null = (() => {
 export const notifications: Notifications | null = (() => {
   const instance = resolveInstance(instances, "notifications");
   if (!instance || !jobs) return null;
-  const created = createNotifications({ instance, db, enqueue: jobs.enqueue, env: process.env });
+  const created = createNotifications({
+    instance, db, enqueue: jobs.enqueue, env: process.env,
+    // Multi-tenancy (spec/services.md): a scoped message delivers with its
+    // project's declared email provider + key. Deferred import breaks the
+    // services ↔ project-services cycle.
+    resolveScope: (scope) => import("./project-services").then((m) => m.resolveEmailScope(scope)),
+  });
   notificationsRef = created;
   Object.assign(handlers, created.jobHandlers());
   return created;

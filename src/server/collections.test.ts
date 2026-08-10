@@ -282,6 +282,29 @@ describe("self-clonability: the platform console is hostable from ANY static ori
   });
 });
 
+describe("per-project services (spec/services.md)", () => {
+  it("site.services declares payment/delivery/email and validates against the hosted schema", async () => {
+    const cookie = await signUp("svc-owner");
+    const project = (await makeProject(cookie, "Svc Site")).split("/")[1]!;
+    const patched = await fetch(url(`/v1/projects/${project}`), {
+      method: "PATCH", headers: { ...json, Cookie: cookie },
+      body: JSON.stringify({ site: { services: {
+        payment: { provider: "stripe" },
+        delivery: { provider: "download" },
+        email: { provider: "resend", from: "Shop <shop@you.com>" },
+      } } }),
+    });
+    expect(patched.status).toBe(200);
+    expect(((await patched.json()) as { site: { services: { email: { provider: string } } } }).site.services.email.provider).toBe("resend");
+
+    // The project-config schema now describes services (autocomplete + validate).
+    const schema = (await (await fetch(url("/v1/schemas/project-config.json"))).json()) as Record<string, any>;
+    expect(schema.properties.site.properties.services.properties.email.properties.provider.enum).toContain("resend");
+    // The resend option is gated to the two real choices.
+    expect(schema.properties.site.properties.services.properties.payment.properties.provider.enum).toEqual(["stripe"]);
+  });
+});
+
 describe("CMS-on-CMS: a child project nests under its parent's path", () => {
   it("/v1/projects/{parent}/projects/{child}/** is the child's whole surface — derived, no flag", async () => {
     const cookie = await signUp("nest-host");
