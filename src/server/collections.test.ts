@@ -282,59 +282,54 @@ describe("self-clonability: the platform console is hostable from ANY static ori
   });
 });
 
-describe("white-label resellers (spec/reseller.md)", () => {
-  it("a reseller's pool member provisions a child project with full owner capability", async () => {
-    // The reseller: a platform account's project with a pool + reseller mode.
-    const cookie = await signUp("reseller-owner");
-    const reseller = (await makeProject(cookie, "Whitelabel Inc")).split("/")[1]!;
-    await fetch(url(`/v1/projects/${reseller}`), {
+describe("white-label by composition (auth-pools + keys:mint + project create)", () => {
+  it("a project's pool member creates and fully owns their own child project — no reseller primitive", async () => {
+    // A 'reseller' is just a project that has a pool. No special mode.
+    const cookie = await signUp("wl-host");
+    const host = (await makeProject(cookie, "Whitelabel Host")).split("/")[1]!;
+    await fetch(url(`/v1/projects/${host}`), {
       method: "PATCH",
       headers: { ...json, Cookie: cookie },
-      body: JSON.stringify({
-        auth_pool: { emailPassword: { enabled: true } },
-        site: { reseller: { enabled: true, childPrefix: "wl" } },
-      }),
+      body: JSON.stringify({ auth_pool: { emailPassword: { enabled: true } } }),
     });
 
-    // A CUSTOMER signs up in the RESELLER's pool (not a platform account).
-    const poolUp = await fetch(url(`/v1/projects/${reseller}/auth/sign-up/email`), {
-      method: "POST",
-      headers: json,
-      body: JSON.stringify({ email: `customer-${Date.now()}@example.com`, password: "supersecret1", name: "customer" }),
+    // 1. A customer signs up in the HOST's pool (not a platform account).
+    const poolUp = await fetch(url(`/v1/projects/${host}/auth/sign-up/email`), {
+      method: "POST", headers: json,
+      body: JSON.stringify({ email: `wl-cust-${Date.now()}@example.com`, password: "supersecret1", name: "cust" }),
     });
     expect(poolUp.status).toBe(200);
     const poolToken = poolUp.headers.get("set-auth-token")!;
-    expect(poolToken).toBeTruthy();
 
-    // Anonymous / platform principals are refused; pool member provisions.
-    expect((await fetch(url(`/v1/projects/${reseller}/projects`), { method: "POST", headers: json, body: "{}" })).status).toBe(401);
-    const provisioned = await fetch(url(`/v1/projects/${reseller}/projects?id=shop`), {
-      method: "POST",
-      headers: { ...json, Authorization: `Bearer ${poolToken}` },
-      body: JSON.stringify({ display_name: "Customer Shop" }),
+    // 2. They mint a key at the EXISTING keys:mint (pool principals accepted).
+    const minted = await fetch(url(`/v1/projects/${host}/keys:mint`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${poolToken}` }, body: "{}",
     });
-    expect(provisioned.status).toBe(201);
-    const child = (await provisioned.json()) as { path: string; owner_key: string };
-    expect(child.path).toBe("projects/wl-shop");
-    expect(child.owner_key).toMatch(/^sk_/);
+    expect(minted.status).toBe(200);
+    const key = ((await minted.json()) as { plaintext: string }).plaintext;
+    expect(key).toMatch(/^sk_/);
 
-    // The child key is a FULL owner: definitions, secrets, project doc.
-    const owner = { ...json, Authorization: `Bearer ${child.owner_key}` };
-    const applied = await fetch(url(`/v1/projects/wl-shop/collections/things`), {
+    // 3. That key creates a project via the EXISTING POST /v1/projects.
+    const created = await fetch(url(`/v1/projects?id=wl-child`), {
+      method: "POST", headers: { ...json, Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ display_name: "Customer Child" }),
+    });
+    expect(created.status).toBe(201);
+    const child = (await created.json()) as { path: string; created_by: string };
+    expect(child.path).toBe("projects/wl-child");
+    // Attribution is free: the namespaced pool principal names the host.
+    expect(child.created_by).toMatch(new RegExp(`^pool:${host}:`));
+
+    // 4. Full owner capability under that same key — no capability loss.
+    const owner = { ...json, Authorization: `Bearer ${key}` };
+    const applied = await fetch(url(`/v1/projects/wl-child/collections/things`), {
       method: "PUT", headers: owner,
       body: JSON.stringify({ definition: { singular: "thing", plural: "things", fields: [{ name: "title", type: "string", required: true }], policy_list: "public", policy_get: "public", policy_create: "authenticated" } }),
     });
     expect([200, 201]).toContain(applied.status);
-    expect((await fetch(url("/v1/projects/wl-shop/secrets"), { headers: owner })).status).toBe(200);
-    const patched = await fetch(url("/v1/projects/wl-shop"), {
-      method: "PATCH", headers: owner, body: JSON.stringify({ site: { url: "https://customer.example" } }),
-    });
-    expect(patched.status).toBe(200);
-
-    // Listing is scoped to the delegate; the reseller's platform owner is NOT the child's owner.
-    const mine = (await (await fetch(url(`/v1/projects/${reseller}/projects`), { headers: { Authorization: `Bearer ${poolToken}` } })).json()) as { results: { path: string }[] };
-    expect(mine.results.map((r) => r.path)).toContain("projects/wl-shop");
-    expect((await fetch(url("/v1/projects/wl-shop/secrets"), { headers: { ...json, Cookie: cookie } })).status).toBe(403);
+    expect((await fetch(url("/v1/projects/wl-child/secrets"), { headers: owner })).status).toBe(200);
+    // The host's platform owner does NOT own the child (isolation both ways).
+    expect((await fetch(url("/v1/projects/wl-child/secrets"), { headers: { ...json, Cookie: cookie } })).status).toBe(403);
   });
 });
 

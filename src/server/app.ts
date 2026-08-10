@@ -259,57 +259,6 @@ export function createHandler(): (request: Request) => Promise<Response> {
           { headers: { "Cache-Control": "no-cache" } },
         ));
       }
-      // Delegated provisioning (spec/reseller.md §2): a reseller-enabled
-      // project's POOL members self-serve real platform projects. The
-      // child's created_by is the delegated principal
-      // `pool:{reseller}:{uid}` — a namespace no platform account id can
-      // collide with — and its owner sk_ key is minted against the same
-      // string, so every existing owner check works unchanged. That is
-      // the white-label no-capability-loss guarantee, structurally.
-      if (segments[2] === "projects" && segments[3] && segments[4] === "projects" && !segments[5]) {
-        const reseller = segments[3];
-        const resellerRows = await db.select().from(projects).where(eq(projects.id, reseller)).limit(1);
-        const site = (resellerRows[0]?.site ?? null) as { reseller?: { enabled?: boolean; childPrefix?: string } } | null;
-        if (!site?.reseller?.enabled) {
-          return corsify(Response.json({ title: "Not a reseller project (site.reseller.enabled)." }, { status: 404 }));
-        }
-        const { poolPrincipal } = await import("./pools");
-        const member = await poolPrincipal(reseller, request.headers);
-        if (!member) return corsify(Response.json({ title: "Sign in to the reseller's pool." }, { status: 401 }));
-        const delegate = `pool:${reseller}:${member.userId}`;
-        if (request.method === "GET") {
-          const children = await db.select().from(projects).where(eq(projects.created_by, delegate));
-          return corsify(Response.json({
-            results: children.map((row) => ({ path: `projects/${row.id}`, display_name: row.display_name, create_time: row.create_time })),
-          }));
-        }
-        if (request.method === "POST") {
-          const body = (await request.json().catch(() => ({}))) as { display_name?: unknown };
-          const displayName = typeof body.display_name === "string" && body.display_name ? body.display_name : "Untitled";
-          const requested = url.searchParams.get("id");
-          if (requested && !/^[a-z0-9][a-z0-9-]{0,50}$/.test(requested)) {
-            return corsify(Response.json({ title: "id must match ^[a-z0-9][a-z0-9-]{0,50}$ (AEP-122)." }, { status: 400 }));
-          }
-          const prefix = site.reseller.childPrefix;
-          const id = `${prefix ? `${prefix}-` : ""}${requested ?? crypto.randomUUID()}`;
-          if ((await db.select().from(projects).where(eq(projects.id, id)).limit(1)).length) {
-            return corsify(Response.json({ title: `projects/${id} already exists.` }, { status: 409 }));
-          }
-          const now = new Date().toISOString();
-          await db.insert(projects).values({
-            id, display_name: displayName, created_by: delegate, create_time: now, update_time: now,
-          } as never);
-          const minted = await createApiKey(db, { class: "secret", name: `owner:${id}`, userId: delegate, scopes: ["*"] });
-          return corsify(Response.json({
-            path: `projects/${id}`,
-            display_name: displayName,
-            reseller,
-            // Returned ONCE (keys.md): the child's whole management surface.
-            owner_key: minted.plaintext,
-          }, { status: 201 }));
-        }
-        return corsify(Response.json({ title: "GET (list mine) or POST (provision)." }, { status: 405 }));
-      }
       // Per-project secrets (spec/secrets.md): write-only values, owner-
       // gated; the self-serve keystone — auth pools + the payment gateway
       // resolve EnvRefs against these before the worker env.

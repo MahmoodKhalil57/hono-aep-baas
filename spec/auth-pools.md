@@ -89,6 +89,39 @@ Pool users may mint their own scoped keys where the project enables it
 metadata, and subset-delegated child keys — keys.md carries these as
 extensions.
 
+## 3a. White-label by composition (no reseller primitive)
+
+The CMS is capable enough that white-labeling is not a feature — it is
+what these existing pieces DO when composed, with nothing added:
+
+1. A project declares an `auth_pool` and hosts its own static console
+   (the bastarter pattern; site.md §2). Its END-USERS are that
+   project's customers.
+2. A pool user mints a key at `POST /v1/projects/{host}/keys:mint`
+   (§3 — the pool principal is accepted). The key carries the
+   namespaced principal `pool:{host}:{user}`.
+3. That key creates a project via the ordinary `POST /v1/projects`
+   (create policy `authenticated`); `created_by` is auto-stamped
+   `pool:{host}:{user}`.
+
+The child is an ordinary platform project: every `/v1/projects/{child}`
+surface works under the key, and every owner check
+(`created_by === principal.userId`) passes because the ids match.
+No-capability-loss is therefore STRUCTURAL, not a maintained parity.
+
+Attribution is free: the namespaced `created_by` names the host, so
+`pool:{host}:%` enumerates a white-label's children (metering hooks
+into this via counters.md when built). A host wanting id namespacing
+(`b1-*`) or a one-call provision does that in ITS console/CLI — a
+consumer concern, never a platform route. The platform's only job is
+that pool principals are globally unique (they are: `pool:{project}:…`)
+so a white-label customer can never collide with, or impersonate, a
+platform account or another host's customer.
+
+Bounding who may create projects (should a shop's SHOPPERS be able to?)
+is a QUOTA concern (quotas.md), identical for platform accounts and
+pool members — not an auth special-case.
+
 ## 4. References
 
 - suite authn kind (better-auth), notifications kind, baas/keys.md,
