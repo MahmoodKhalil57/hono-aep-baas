@@ -56,7 +56,52 @@ under a new name — rows, not deploys. New behavior is a platform change
 (a new capability in §6), not a document. A spec that implied otherwise
 would be promising magic.
 
-## 2. `kinds/` — declaring your children's platform
+## 2. Definition and binding are separate documents
+
+Borrowed from Crossplane's XRD/Composition split, and it is what makes
+"shapes are free" structural rather than a slogan: a **definition** carries
+no capability at all, so it cannot leak one.
+
+| document | is | analogous to |
+| --- | --- | --- |
+| `kinds/{name}.cms.json` | the SHAPE — names, fields, states, transitions | Crossplane XRD |
+| `bindings/{name}.cms.json` | HOW that shape is powered — `kind`, `bind`, `constrain`, `defaults`, `tier` | Crossplane Composition |
+
+One shape, many bindings — that is "mix up the capabilities":
+
+```jsonc
+// kinds/models.cms.json — pure shape, no capability
+{ "singular": "model", "plural": "models",
+  "fields": [{ "name": "title", "type": "string" }] }
+
+// bindings/models-free.cms.json — the same shape, powered cheaply
+{ "kind": "models", "bind": "collection", "tier": "free",
+  "constrain": { "field_types": ["string", "number", "boolean"] } }
+
+// bindings/models-pro.cms.json — same shape, fewer limits
+{ "kind": "models", "bind": "collection", "tier": "pro" }
+```
+
+Three properties fall out:
+
+1. **Rebinding without redefining.** A tier upgrade swaps the binding; the
+   shape, and therefore every document already written against it, is
+   untouched.
+2. **The narrowing law lands on the BINDING** (§3), never the shape. A
+   definition is inert until bound, so publishing or sharing one grants
+   nothing.
+3. **No opacity.** The binding is a document you can read, diff, and
+   review — you can always see which capability powers a shape and swap it.
+   A no-code platform that fuses the two (NocoBase's model) leaves you
+   unable to answer "what is actually behind this?", which is exactly the
+   question a layer reselling a platform must be able to answer.
+
+A binding MUST reference a `kind` its project can see and a `bind` its
+project holds. Absent `bindings/`, a kind carrying an inline `bind` is
+accepted as the one-document shorthand — beginners write one file, platforms
+split when they need per-tier variation.
+
+## 2a. `kinds/` — declaring your children's platform
 
 Perfect symmetry with the data plane, which is what makes this teachable:
 
@@ -81,7 +126,7 @@ Declaring a kind is the whole projection: **a child's platform is exactly
 the kinds its parent declared.** There is no separate grant list to keep in
 sync, and no "white-label" flag — the documents ARE the product definition.
 
-## 2a. Config size tracks how much platform you are building
+## 2b. Config size tracks how much platform you are building
 
 A useful sanity check, and today it is **inverted** — which is the clearest
 evidence the primitive is missing:
@@ -205,6 +250,55 @@ config, and has a backend — with no Cloudflare account, no worker, no
 database, and no deploy of their own. That is the product claim this spec
 exists to make true, and §3's narrowing law is what makes it safe to offer.
 
+## 7a. Provisioning a customer is one write
+
+Two gaps make a platform's core operation clumsier than it should be, and
+both are about making the in-between states *visible*.
+
+### A child has a lifecycle
+
+A project is currently binary: it exists or it does not. So the most common
+real state — **provisioned, but its domain is not yet verified** — is
+invisible: nothing to query, nothing for a console to show, nothing to drive
+a retry. The child carries states, in the same AEP-216 vocabulary every
+other resource uses:
+
+| state | meaning |
+| --- | --- |
+| `PROVISIONING` | created; prerequisites (domain verification, seeds) outstanding |
+| `ACTIVE` | every declared prerequisite satisfied; serving |
+| `SUSPENDED` | withdrawn by the parent (non-payment, abuse) — config intact, surface closed |
+
+`PROVISIONING → ACTIVE` is derived, not asserted: a child with a declared
+`domain` reaches `ACTIVE` when that domain reaches `ACTIVE` (domains.md §2).
+A parent may `:suspend` and `:resume` its own children — that is the
+capability a platform needs in order to run a business, and it is exactly
+where metering (§8) attaches.
+
+Because the state is a field, "which of my customers are stuck?" is an
+ordinary filtered list rather than a support ticket.
+
+### The child record references its domain
+
+Provisioning a customer should be ONE write:
+
+```jsonc
+POST {BASE}/projects?id=acme
+{ "display_name": "Acme",
+  "domain": "api.acme.example.com",   // declared here, not as a second call
+  "tier": "pro" }                      // selects the binding (§2)
+```
+
+The platform creates the domain row, returns its challenge, and parks the
+child in `PROVISIONING` until verification lands. One write, one round trip,
+one place to look for what is missing — instead of create-project, then
+create-domain, then poll two resources and correlate them by hand.
+
+`domain` on the child is a REFERENCE, not a copy: the domain resource
+remains the authority on state and challenge (domains.md), and the child
+simply points at it. Two records that each stored verification state would
+drift.
+
 ## 8. Metering and billing (PLANNED)
 
 Every capability invocation crosses a known seam, so usage is attributable
@@ -226,6 +320,14 @@ Recorded here so the seam is designed for it, not retrofitted.
    projection — routes, contract, agent surface, and interface alike.
 7. Granting `project` makes a child a platform; withholding it makes the
    child a leaf, and its own `kinds/` is then inert.
+8. A definition alone grants nothing: a `kinds/` document with no binding is
+   inert, and the narrowing law is checked on the BINDING (§2, §3).
+9. One shape bound two ways serves both tiers from ONE definition; swapping
+   a binding does not disturb documents already written against the shape.
+10. A child with a declared domain sits in `PROVISIONING` until that domain
+    is `ACTIVE`, and the transition is derived — never asserted by a client.
+11. Creating a child with `domain` provisions both in one write, and the
+    domain resource stays the only authority on verification state.
 
 ## 10. Non-goals v1
 
