@@ -211,7 +211,12 @@ Ordered by unlock-per-unit-work, not by app popularity:
    unblocks every document number.
 4. **Automation** (§2.2) — BIND Workflows over the events we already emit.
 5. **Ledger** (§2.5) — BUILD, platform-owned. Largest and most
-   invariant-heavy; deliberately last.
+   invariant-heavy.
+
+**Reprioritised by pricing.md:** credits ARE money, so the credits balance
+needs the ledger's append-only + balance-as-a-fold discipline. Adopting the
+credits model pulls the ledger primitive forward from last place — not the
+full accounting app, but its invariants.
 
 Free wins worth taking out of order because they cost almost nothing:
 **Turnstile** (the already-spec'd forms challenge) and **Email Routing**
