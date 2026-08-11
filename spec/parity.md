@@ -231,9 +231,15 @@ Widened in three ways the earlier draft missed:
    evaluated at four positions (method, transition, field, row) rather than
    four mechanisms.
 
-#### 2.6b The `before` veto — the cheapest item in the audit
+#### 2.6b The `before` veto — IMPLEMENTED (2026-08-11)
 
 Distinct from *who may fire it*: **may this transition fire at all?**
+
+> **Shipped.** `TransitionDefinition.before` refuses by returning `false` or
+> by throwing an `AepProblem` when the caller deserves a reason. It runs
+> BEFORE any write, so a refusal leaves no partial state and `after` never
+> runs (asserted in `conformance/aep-0216.test.ts`). `from` asks whether the
+> RESOURCE is ready; this asks whether the WORLD is.
 `quality`'s blocking check, a purchase three-way match, and a leave-balance
 sufficiency refusal are all vetoes, not authorizations. Purely additive to an
 existing type, roughly a day's work, and it unlocks disproportionately.
@@ -425,7 +431,7 @@ Ordered by unlock-per-unit-work against the 34-app frequency analysis.
 | --- | --- | --- | --- |
 | 0a | **Turnstile** challenge | BIND, **free** | already spec'd (`forms.md` §2) |
 | 0b | **Email Routing** intake | BIND, **free** | email → ticket/lead, no mailbox to run |
-| 0c | **Transition `before` veto** (§2.6b) | BUILD, ~1 day | **the cheapest item in the audit** — purely additive to an existing type |
+| 0c | ~~Transition `before` veto~~ (§2.6b) | **DONE** | purely additive; the cheapest unlock in the audit |
 
 ### Tier 1 — the three that move everything
 
