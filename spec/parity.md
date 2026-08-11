@@ -170,6 +170,8 @@ unlock breadth the way §2.1–2.3 do.
 
 ### 2.5 Balances — append-only, parameterised by UNIT (19/34)
 
+> Specified in full in **`balances.md`**.
+
 **This section was mis-framed as "Ledger" and it cost us the roadmap.** Framed
 as double-entry accounting it is a one-app unlock and the largest, riskiest
 build. Framed correctly it is one primitive serving a third of the catalog:

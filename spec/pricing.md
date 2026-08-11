@@ -66,7 +66,7 @@ capability we host, not for a vendor account we cannot see.
   has a *price*, not that every operation is *paid for* by the customer.
 - Balance is a **fold over an append-only usage ledger**, never a mutable
   counter. Credits are money: a balance that can drift is a refund dispute.
-  (This is parity.md §2.5, now reframed as **Balances** — append-only entries
+  (This is **`balances.md`** Profile A — see parity.md §2.5 for the reframing — append-only entries
   parameterised by unit. Credits are Profile B, which parity.md §5 ships
   first precisely because this document requires it.)
 - Every charge is traceable to the operation that caused it, and appears on
