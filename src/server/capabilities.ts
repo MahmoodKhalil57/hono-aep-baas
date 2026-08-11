@@ -34,7 +34,7 @@ export const CATALOG = new Set([
   "domain", // verified host → surface routing (Workers custom domains)
   "media", // blob upload/serve (R2)
   "search", // indexed query + embeddings (Workers AI)
-  "jobs", // queued async work (Queues / cron)
+  "jobs", // queued async work (cron + D1 today; Queues is the upgrade)
   "notifications", // multi-channel delivery
   "auth_pool", // end-user identity for a project's own customers
   "secrets", // per-project encrypted values

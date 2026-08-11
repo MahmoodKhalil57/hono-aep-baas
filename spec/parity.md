@@ -121,6 +121,55 @@ approval chain.
 Unlocks: Approvals, Expenses, Purchase agreements, Helpdesk escalation,
 editorial publish gates.
 
+## 2.7 The substrate: what we can bind cheaply
+
+We bind **three** products today — D1, R2, Workers AI — plus a 1-minute
+cron. Everything else in the catalog is unused, and the §2 gaps map almost
+one-to-one onto products that are a binding away:
+
+| gap (§2) | product | why it fits | cost |
+| --- | --- | --- | --- |
+| 2.3 aggregation | **Analytics Engine** | write-heavy time series + SQL read API; reporting without a new data model | very low |
+| 2.4 sequences | **Durable Objects** | single-threaded per object ⇒ gap-free numbering is its natural shape | low |
+| 2.2 automation | **Workflows** | durable multi-step execution with retries — exactly "confirm order → invoice" | low |
+| jobs (today cron-polled) | **Queues** | real async delivery instead of a minute-granularity poll | low |
+| forms challenge (forms.md §2) | **Turnstile** | the PLANNED captcha binding, already spec'd | **free** |
+| inbound intake | **Email Routing** | email → Worker ⇒ a ticket/submission, no mailbox to run | **free** |
+| search | **Vectorize** | we already embed with Workers AI; this stores the vectors | low |
+| quotas.md | **Rate Limiting** | the declared quota surface, enforced at the edge | included |
+| config/cache | **Workers KV** | cheap read-heavy cache in front of D1 | low |
+| AI spend control | **AI Gateway** | caches and meters model calls | free/low |
+
+Metered but justified **per use**, never by default:
+
+- **Images** — media transforms. Cheaper than shipping originals, but it is
+  billed; bind it behind a per-project opt-in.
+- **Browser Rendering** — PDF invoices and OG snapshots. Real value for
+  finance, real cost per render; use it for artifacts, never per request.
+
+### Deliberately excluded
+
+- **Stream** — video. The expensive class, and avoidable: R2 already stores
+  bytes egress-free, and an embed from a third-party host costs nothing.
+- **Realtime / Calls** — SFU pricing for a capability no listed app needs.
+- **Containers / Sandboxes** — heavier compute than a Worker for problems a
+  Worker solves.
+- **Hyperdrive** — pooling for external databases we do not have.
+- **Pages** — the consumer frontends already ship on GitHub Pages.
+
+### Workers for Platforms — the one we route around
+
+Cloudflare's own answer to multi-tenant white-label is dispatch namespaces,
+and it is **enterprise-priced**. Our nested projects and narrowing law
+(surface.md §1, kinds.md §3) reach the same product on the standard plan,
+because tenancy is expressed as *routing plus a capability fold* rather than
+as isolated scripts. Worth stating explicitly: it is a cost moat, and it is
+why "layer 3 needs no Cloudflare account" is affordable to offer.
+
+The sequencing in §5 barely changes as a result — but three of its five
+steps stop being "build a primitive" and become "bind a product", which is a
+materially smaller job.
+
 ## 3. What this implies for `/v1/schemas/`
 
 The schema surface is the beginner-facing contract, and it currently lags:
@@ -153,11 +202,20 @@ inflicting Odoo's complexity on a store.**
 
 Ordered by unlock-per-unit-work, not by app popularity:
 
-1. **Relations** (§2.1) — the widest unlock; everything else composes better after it.
-2. **Aggregation** (§2.3) — turns existing data into dashboards with no new data model.
-3. **Sequences** (§2.4) — small, self-contained, unblocks all document numbering.
-4. **Automation** (§2.2) — the substrate exists; this is a declarative surface over it.
-5. **Ledger** (§2.5) — largest, most invariant-heavy; deliberately last, and platform-owned.
+1. **Relations** (§2.1) — BUILD. The widest unlock, and the only one with no
+   product behind it: cascade, reverse accessors and write-time integrity are
+   ours to write.
+2. **Aggregation** (§2.3) — BIND Analytics Engine. Dashboards with no new
+   data model.
+3. **Sequences** (§2.4) — BIND Durable Objects. Small, self-contained,
+   unblocks every document number.
+4. **Automation** (§2.2) — BIND Workflows over the events we already emit.
+5. **Ledger** (§2.5) — BUILD, platform-owned. Largest and most
+   invariant-heavy; deliberately last.
+
+Free wins worth taking out of order because they cost almost nothing:
+**Turnstile** (the already-spec'd forms challenge) and **Email Routing**
+(inbound intake), both free.
 
 ## 6. Non-goals
 

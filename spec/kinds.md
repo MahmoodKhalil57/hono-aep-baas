@@ -227,7 +227,7 @@ already implemented and already backed by a Cloudflare product:
 | `domain` | verified host → surface routing (domains.md) | Workers custom domains |
 | `media` | blob upload/serve | R2 |
 | `search` | indexed query + embeddings | Workers AI |
-| `jobs` | queued async work | Queues / cron |
+| `jobs` | queued async work | cron + D1 today; Queues is the upgrade (parity.md §2.7) |
 | `notifications` | multi-channel delivery | provider + Queues |
 | `authn` / `auth_pool` | platform and end-user identity | D1 |
 | `secrets` | per-project encrypted values | D1 |
