@@ -1604,3 +1604,76 @@ describe("commerce cart→checkout (baas/commerce.md)", () => {
     expect(orders[0]!.status).toBe("paid");
   }, 30_000);
 });
+
+describe("per-project Stripe webhooks (production.md blocker #1)", () => {
+  /** Sign a body exactly as Stripe does: HMAC-SHA256 over `{t}.{body}`. */
+  const stripeSignature = async (secret: string, body: string): Promise<string> => {
+    const t = Math.floor(Date.now() / 1000);
+    const key = await crypto.subtle.importKey(
+      "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+    );
+    const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${t}.${body}`));
+    const v1 = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    return `t=${t},v1=${v1}`;
+  };
+
+  it("a merchant's OWN webhook secret pays their order (it never did before)", async () => {
+    const cookie = await signUp("wh-merchant");
+    const project = await makeProject(cookie, "WH Shop");
+    const pid = project.split("/")[1]!;
+    const owner = { ...json, Cookie: cookie };
+
+    // The merchant's own Stripe. THIS is the secret Stripe will sign with —
+    // previously the route verified against the operator's env secret, so
+    // the signature never matched and :pay never fired.
+    const secret = "whsec_merchant_only_secret";
+    for (const [name, value] of Object.entries({
+      STRIPE_SECRET_KEY: "sk_test_merchant",
+      STRIPE_PUBLISHABLE_KEY: "pk_test_merchant",
+      STRIPE_WEBHOOK_SECRET: secret,
+    })) {
+      expect((await fetch(url(`/v1/projects/${pid}/secrets/${name}`), {
+        method: "PUT", headers: owner, body: JSON.stringify({ value }),
+      })).status).toBeLessThan(300);
+    }
+
+    // A catalog + a cart → a pending order to settle.
+    await fetch(url(`/v1/${project}/collections/catalog`), {
+      method: "PUT", headers: owner,
+      body: JSON.stringify({ definition: { singular: "product", plural: "products", fields: [{ name: "name", type: "string", required: true }, { name: "price_cents", type: "number", integer: true }], policy_create: "authenticated", policy_get: "public", policy_list: "public" } }),
+    });
+    await fetch(url(`/v1/${project}/products?id=mug`), { method: "POST", headers: owner, body: JSON.stringify({ name: "Mug", price_cents: 900 }) });
+    await fetch(url(`/v1/${project}`), { method: "PATCH", headers: owner, body: JSON.stringify({ auth_pool: {} }) });
+    const tok = (await fetch(url(`/v1/${project}/auth/sign-up/email`), {
+      method: "POST", headers: json,
+      body: JSON.stringify({ email: `wh-buyer-${Date.now()}@x.com`, password: "supersecret1", name: "B" }),
+    })).headers.get("set-auth-token")!;
+    const buyer = { ...json, Authorization: `Bearer ${tok}` };
+    await fetch(url(`/v1/projects/${pid}/commerce/cart:add`), { method: "POST", headers: buyer, body: JSON.stringify({ variant: "mug", quantity: 1 }) });
+    const checkout = await fetch(url(`/v1/projects/${pid}/commerce/cart:checkout`), { method: "POST", headers: buyer, body: "{}" });
+    const orderId = ((await checkout.json()) as { order: { id?: string; path?: string } }).order.id
+      ?? String(((await (await fetch(url(`/v1/projects/${pid}/commerce/orders`), { headers: buyer })).json()) as { results: { id: string }[] }).results[0]?.id);
+
+    // Stripe delivers a payment_intent.succeeded signed with the MERCHANT's
+    // secret, carrying the order in metadata.
+    const event = JSON.stringify({
+      id: `evt_${Date.now()}`, type: "payment_intent.succeeded",
+      data: { object: { id: "pi_merchant_1", metadata: { order: orderId, project: pid } } },
+    });
+    const accepted = await fetch(url(`/v1/projects/${pid}/billing/stripe-webhook`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Stripe-Signature": await stripeSignature(secret, event) },
+      body: event,
+    });
+    expect(accepted.status).toBe(202);
+    expect((await accepted.json()) as { scope?: string }).toMatchObject({ scope: "project" });
+
+    // A signature from someone else's secret must NOT be accepted.
+    const forged = await fetch(url(`/v1/projects/${pid}/billing/stripe-webhook`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Stripe-Signature": await stripeSignature("whsec_not_the_merchant", event) },
+      body: event,
+    });
+    expect(forged.status).not.toBe(202);
+  }, 30_000);
+});

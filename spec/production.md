@@ -70,13 +70,17 @@ and the reason every item below should be *declared*, not clicked.
 
 ### E. Money — **the blocking section**
 - [ ] ◐ `STRIPE_SECRET_KEY` + `STRIPE_PUBLISHABLE_KEY` in project secrets
-- [ ] ✗ **`STRIPE_WEBHOOK_SECRET` is not honoured per project.**
-      `projectGateway()` builds a per-project gateway from the project's own
-      keys, but the webhook route calls the PLATFORM-level `billing` and
-      `gateway` singletons, which verify against the operator's env secret.
-      Consequence: a store using its own Stripe keys takes real money, and
-      the `:pay` transition never fires — orders sit unpaid until a human
-      fulfils them from the admin. **A store cannot run hands-off today.**
+- [x] ✅ **`STRIPE_WEBHOOK_SECRET` is honoured per project.** The route
+      verifies FIRST and dispatches second, trying each secret that may
+      legitimately sign on this path — the project's own Stripe, the
+      operator's gateway, then operator billing — and returns 401 if none
+      verified. A merchant using their own keys now completes orders
+      automatically. Two hardenings came with it: a merchant-verified event
+      acts only on **that** project regardless of what its metadata claims
+      (a merchant could otherwise name someone else's project), and an
+      unverified payload can no longer 202 by falling through to a
+      `local` billing instance, which returns `{ignored:true}` WITHOUT
+      verifying.
 - [ ] ◐ Live keys (not test) and a real end-to-end purchase performed
 - [ ] ◐ Refund path exercised from the admin
 - [ ] ✗ Tax / VAT — no tax engine (parity.md §2.5). Fine for digital goods in
@@ -144,9 +148,7 @@ and the reason every item below should be *declared*, not clicked.
 
 Ordered by what breaks first:
 
-1. **Per-project Stripe webhook verification** (§E). Without it a merchant's
-   own keys cannot complete an order automatically. Everything else is a
-   diminished experience; this one takes money without delivering.
+1. ~~Per-project Stripe webhook verification~~ — **FIXED** (§E).
 2. **A `keys:revoke` route** (§A). A leaked key is unrecoverable self-serve.
 3. **Legal pages in the template** (§J). Cheap to add, and Stripe will ask.
 4. **A rehearsed restore** (§K, §L). Time Travel already covers the mechanism;

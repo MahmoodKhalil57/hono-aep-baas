@@ -792,39 +792,85 @@ export function createHandler(): (request: Request) => Promise<Response> {
         segments[2] === "projects" && segments[3] && segments[4] === "billing" &&
         segments[5] === "stripe-webhook" && !segments[6] && request.method === "POST"
       ) {
-        if (!billing) return corsify(Response.json({ title: "No billing." }, { status: 404 }));
-        try {
-          const body = await request.text();
-          const result = await billing.handleWebhook({
-            signature: request.headers.get("Stripe-Signature"),
-            body,
-          });
-          // Payment → order (commerce.md §3 flow 3): a VERIFIED paid session
-          // carrying order coordinates fires the order's :pay transition —
-          // THAT is what emits the trustworthy order_completed + decrements
-          // inventory. handleWebhook already verified the signature above.
-          const { stripeEventToOrder } = await import("hono-aep-billing");
-          const parsedEvent = JSON.parse(body) as Json;
-          const orderRef = stripeEventToOrder(parsedEvent);
-          if (orderRef) {
-            const commerce = projectCommerce(orderRef.projectId ?? segments[3]!);
-            await commerce.pay({ orderId: orderRef.orderId, payment: `stripe:${orderRef.eventId}` }).catch(() => null);
+        const projectId = segments[3]!;
+        const body = await request.text();
+        const signature = request.headers.get("Stripe-Signature");
+
+        /**
+         * Drive the order machine from a VERIFIED neutral event. `project`
+         * is passed by the caller, never read from the payload, because the
+         * payload's metadata is chosen by whoever created the payment — a
+         * merchant could otherwise name someone else's project and pay
+         * their orders.
+         */
+        const applyPayment = async (
+          name: string,
+          neutral: import("hono-aep-gateway").NeutralPaymentEvent | null,
+          project: string,
+        ): Promise<void> => {
+          const order = neutral?.metadata["order"];
+          if (!neutral || !order) return;
+          const commerce = projectCommerce(project);
+          if (neutral.type === "payment.succeeded") {
+            await commerce.pay({ orderId: order, payment: `${name}:${neutral.paymentId}` }).catch(() => null);
+          } else if (neutral.type === "refund.succeeded") {
+            await commerce.refund({ orderId: order, reason: "gateway refund" }).catch(() => null);
           }
-          // Embedded-gateway events (gateway.md §2): the driver normalizes
-          // provider vocabulary; metadata carries the order coordinates.
-          const neutral = gateway?.webhookEvent(parsedEvent) ?? null;
-          if (neutral?.metadata["order"] && neutral.metadata["project"]) {
-            const commerce = projectCommerce(neutral.metadata["project"]);
-            if (neutral.type === "payment.succeeded") {
-              await commerce.pay({ orderId: neutral.metadata["order"], payment: `${gateway!.name}:${neutral.paymentId}` }).catch(() => null);
-            } else if (neutral.type === "refund.succeeded") {
-              await commerce.refund({ orderId: neutral.metadata["order"], reason: "gateway refund" }).catch(() => null);
-            }
-          }
-          return corsify(Response.json(result, { status: 202 }));
-        } catch (problem) {
-          return corsify(Response.json({ title: (problem as Error).message }, { status: 401 }));
+        };
+
+        // VERIFY FIRST, DISPATCH SECOND. Three secrets can legitimately sign
+        // events on this path — the project's own Stripe, the operator's
+        // gateway, and the operator's billing — so each is tried in turn.
+        // Nothing is acted on, and nothing returns 202, until some secret we
+        // hold has actually verified the payload: `billing.handleWebhook`
+        // returns `{ignored:true}` WITHOUT verifying when its provider is not
+        // stripe, so falling through to it would 202 a forged signature.
+        //
+        // MERCHANT FIRST (secrets.md §2). A project that declared its own
+        // STRIPE_* takes money into ITS account, so Stripe signs with ITS
+        // webhook secret. Verifying those against the OPERATOR's secret is
+        // precisely why `:pay` never fired and orders sat unpaid.
+        const own = await (await import("./secrets")).projectGateway(projectId);
+        if (own && (await own.verifyWebhook({ signature, body }))) {
+          // Verified with THIS project's secret ⇒ act only on this project,
+          // whatever the payload's metadata claims.
+          await applyPayment(own.name, own.webhookEvent(JSON.parse(body) as Json), projectId);
+          return corsify(Response.json({ ok: true, scope: "project" }, { status: 202 }));
         }
+
+        // OPERATOR-HOSTED commerce: one gateway serving many projects, so
+        // here `project` in the metadata IS the routing key — as trusted as
+        // the operator signature that just verified this payload.
+        if (gateway && (await gateway.verifyWebhook({ signature, body }))) {
+          const neutral = gateway.webhookEvent(JSON.parse(body) as Json);
+          await applyPayment(gateway.name, neutral, neutral?.metadata["project"] ?? projectId);
+          return corsify(Response.json({ ok: true, scope: "platform" }, { status: 202 }));
+        }
+
+        // PLATFORM BILLING: the operator's subscription events → entitlement
+        // grants. Only a stripe-configured billing instance can verify; a
+        // `local` one must never be treated as an authority.
+        if (billing?.provider === "stripe") {
+          try {
+            const result = await billing.handleWebhook({ signature, body });
+            const parsedEvent = JSON.parse(body) as Json;
+            const { stripeEventToOrder } = await import("hono-aep-billing");
+            const orderRef = stripeEventToOrder(parsedEvent);
+            if (orderRef) {
+              const commerce = projectCommerce(orderRef.projectId ?? projectId);
+              await commerce.pay({ orderId: orderRef.orderId, payment: `stripe:${orderRef.eventId}` }).catch(() => null);
+            }
+            return corsify(Response.json(result, { status: 202 }));
+          } catch (problem) {
+            return corsify(Response.json({ title: (problem as Error).message }, { status: 401 }));
+          }
+        }
+
+        // No secret we hold verified this payload.
+        return corsify(Response.json(
+          { title: "No configured webhook secret verified this signature." },
+          { status: 401 },
+        ));
       }
       // Inbound webhooks (connections consumer): signed third-party
       // events (Stripe, …) verified then handed to jobs — NEVER inline.
