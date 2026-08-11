@@ -66,7 +66,61 @@ export async function deleteSecret(projectId: string, name: string): Promise<voi
   bump(projectId);
 }
 
-/** The resolution ladder (spec §2): project secrets over the worker env. */
+/**
+ * ONLY the project's own secrets — no worker-env layer (spec/secrets.md §2a).
+ *
+ * `projectEnv` deliberately falls back to the operator's environment, which
+ * is right for a SHARED capability: a project with no Stripe key of its own
+ * uses the operator's gateway, and that is the documented ladder.
+ *
+ * It is exactly wrong for a BYOK credential. There, a miss must read as "this
+ * project has not connected an account", never as "use ours" — otherwise a
+ * tenant's provisioning silently runs with the PLATFORM's token against the
+ * PLATFORM's account. `CLOUDFLARE_API_TOKEN` and `GITHUB_TOKEN` are also
+ * among the likeliest names to already exist in a deploy environment, so the
+ * collision is probable rather than theoretical.
+ */
+export async function projectSecrets(projectId: string): Promise<Record<string, string>> {
+  const found = (await db
+    .select()
+    .from(jsonRows)
+    .where(and(eq(rows.scope, scopeOf(projectId) as never), eq(rows.collection, COLLECTION as never)))) as Row[];
+  const own: Record<string, string> = {};
+  for (const row of found) if (typeof row.data?.value === "string") own[row.id] = row.data.value;
+  return own;
+}
+
+/**
+ * The env for config whose EnvRef NAMES are chosen by the TENANT.
+ *
+ * `auth_pool` is owner-writable free-form config (project.cms.ts), and the
+ * pool resolves `{"$env": NAME}` out of whatever map it is handed. Handing it
+ * `projectEnv` — which layers project secrets over `{...process.env}` — makes
+ * the operator's entire environment readable by name: a project that sets its
+ * Google `clientId` to `{"$env": "STRIPE_SECRET_KEY"}` gets that value echoed
+ * straight back in the provider's authorize URL, because `client_id` is a
+ * query parameter. Verified end to end in env-exfiltration.test.ts.
+ *
+ * So the worker env contributes ONLY the names below — the operator's
+ * deliberate shared fallbacks (secrets.md §2) — and everything else resolves
+ * from the project's own secrets or not at all. An unresolved EnvRef already
+ * means "provider off" downstream, which is the safe direction.
+ */
+const SHARED_FALLBACK = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] as const;
+
+export async function tenantConfigEnv(projectId: string): Promise<Record<string, string | undefined>> {
+  const shared: Record<string, string | undefined> = {};
+  for (const name of SHARED_FALLBACK) shared[name] = process.env[name];
+  return { ...shared, ...(await projectSecrets(projectId)) };
+}
+
+/**
+ * The resolution ladder (spec §2): project secrets over the worker env.
+ *
+ * ONLY for config whose EnvRef names the OPERATOR controls. Anywhere a tenant
+ * picks the name, use `tenantConfigEnv`; anywhere a credential is BYOK, use
+ * `projectSecrets`.
+ */
 export async function projectEnv(projectId: string): Promise<Record<string, string | undefined>> {
   const found = (await db
     .select()

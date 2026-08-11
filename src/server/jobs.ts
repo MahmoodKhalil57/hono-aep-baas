@@ -54,6 +54,10 @@ export function createJobHandlers(deps: {
         .join("\n\n");
       await notifications.notify({
         to: { email: row.notify_email },
+        // The announce and the autoresponse are the FORM OWNER's work even
+        // though neither is addressed to them by principal — they are who
+        // needs to see whether the mail went out.
+        ...(row.created_by ? { owner: row.created_by } : {}),
         content: {
           subject: `New submission — ${row.display_name}`,
           body: `${lines}\n\n[Open the dashboard](/v1/${event.path})`,
@@ -65,6 +69,7 @@ export function createJobHandlers(deps: {
       if (typeof replyto === "string" && replyto) {
         await notifications.notify({
           to: { email: replyto },
+          ...(row.created_by ? { owner: row.created_by } : {}),
           content: {
             subject: `We received your message — ${row.display_name}`,
             body: "Thanks! Your submission is in; we'll get back to you soon.",

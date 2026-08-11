@@ -49,6 +49,7 @@ export const domains = sqliteTable("domains", {
   id: text("id").notNull(),
   project_id: text("project_id").notNull().references(() => projects.id),
   kind: text("kind", { enum: ["api", "site"] }).notNull(),
+  target: text("target"),
   challenge: text("challenge"),
   verified_time: text("verified_time"),
   last_error: text("last_error"),

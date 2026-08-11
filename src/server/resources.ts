@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { AepProblem, defineResource, type Json } from "hono-aep";
 import { composable, parseThemeCss, printThemeCss, resourceFromDocument } from "hono-aep-cms";
 import { createApiKey } from "hono-aep-auth";
@@ -14,6 +15,13 @@ import { themeCms } from "../cms/theme.cms";
 import { pageCms } from "../cms/page.cms";
 import { blockCms } from "../cms/block.cms";
 import { invalidateProject } from "./jit-collections";
+import { isPlatformZoneHost } from "./platform-host";
+import { projectSecrets } from "./secrets";
+import { CONNECT_COOKIE, claimConnect, connectConfigured, providerFor, startConnect } from "./connect";
+import {
+  applyPlan, cloudflareDns, cnameCollisions, dnsFetch, markerFor, planRecords, zoneForHost,
+  type DesiredRecord,
+} from "./dns";
 import { invalidatePool } from "./pools";
 
 /**
@@ -62,6 +70,71 @@ export const project = defineResource({
     afterUpdate: projectAfter,
     afterApply: projectAfter,
   },
+  /**
+   * Click-to-connect (connect.md) lives on PROJECT, not on a credential
+   * resource, for a specific reason: `customPolicyGuard` resolves an owner
+   * policy by loading the target row before the handler runs, so a verb whose
+   * own row does not exist yet would 404 on the very first call, forever. A
+   * project row always exists.
+   */
+  customMethods: [
+    {
+      verb: "connect",
+      description:
+        "Begin connecting a third-party account (currently `cloudflare`) through the provider's own consent screen, instead of pasting an API token. Returns the URL to send the owner to; the grant is not stored until `:claim-connection` completes in the same browser.",
+      request: z.object({ provider: z.string().min(1) }),
+      response: z.object({
+        authorize_url: z.string(),
+        state: z.string(),
+        expires_time: z.string(),
+      }),
+      handler: async ({ id, body, honoContext }) => {
+        const principal = principalOf(honoContext);
+        if (!principal) throw forbidden("Sign in to connect an account.");
+        if (!connectConfigured()) {
+          throw new AepProblem({
+            type: "FAILED_PRECONDITION", status: 409,
+            title: "Click-to-connect is not configured on this deployment.",
+            detail: "The operator has not registered an OAuth client. Paste an API token instead.",
+          });
+        }
+        const provider = providerFor(String(body["provider"] ?? ""));
+        if (!provider) {
+          throw new AepProblem({
+            type: "INVALID_ARGUMENT", status: 400,
+            title: "Unknown provider.",
+            detail: `No connect flow exists for '${String(body["provider"])}'. Supported: cloudflare.`,
+          });
+        }
+        const started = await startConnect(provider, id, principal.userId);
+        // Host-only, SameSite=Lax so it survives the provider's redirect back,
+        // HttpOnly so no script can read it. It proves "same browser", which
+        // is one half of what :claim-connection requires.
+        honoContext.header(
+          "Set-Cookie",
+          `${CONNECT_COOKIE}=${started.cookie}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=900`,
+          { append: true },
+        );
+        const state = new URL(started.authorize_url).searchParams.get("state")!;
+        return { authorize_url: started.authorize_url, state, expires_time: started.expires_time };
+      },
+    },
+    {
+      verb: "claim-connection",
+      description:
+        "Complete a connection begun with `:connect`, after consent. Must be called by the account that started it, from the same browser — that pairing is what stops a grant being redirected onto someone else's project.",
+      request: z.object({ state: z.string().min(1) }),
+      response: z.object({ provider: z.string(), secret: z.string() }),
+      handler: async ({ id, body, honoContext }) => {
+        const principal = principalOf(honoContext);
+        if (!principal) throw forbidden("Sign in to complete the connection.");
+        const cookie = /(?:^|;\s*)__Host-aep_connect=([^;]+)/.exec(
+          honoContext.req.header("cookie") ?? "",
+        )?.[1] ?? null;
+        return await claimConnect(String(body["state"]), id, principal.userId, cookie);
+      },
+    },
+  ],
 });
 
 /** `projects/{p}/forms/{form}` — owner checked against the parent; pk key minted. */
@@ -355,6 +428,23 @@ export const kind = defineResource({
  */
 const CHALLENGE_LABEL = "_hono-aep-challenge";
 
+/**
+ * The platform's own zone is not claimable (domains.md §1a.3, §7.6).
+ *
+ * This runs BEFORE the uniqueness check because it is a different question:
+ * `assertHostUnclaimed` asks whether someone else got here first, which for a
+ * derived fallback host nobody ever does — there is no row to collide with.
+ */
+const assertNotPlatformHost = (host: string): void => {
+  if (!isPlatformZoneHost(host, process.env["PLATFORM_HOST_SUFFIX"] ?? "")) return;
+  throw new AepProblem({
+    type: "INVALID_ARGUMENT",
+    status: 400,
+    title: "That host belongs to the platform.",
+    detail: `${host} is on the platform's own zone. Free project hosts are derived automatically and need no domain; bring a domain you control instead.`,
+  });
+};
+
 /** A host belongs to exactly one project: first ACTIVE claim wins. */
 const assertHostUnclaimed = async (host: string, parent: string): Promise<void> => {
   const projectId = parent.split("/")[1]!;
@@ -392,6 +482,45 @@ const readChallengeTxt = async (host: string): Promise<string[]> => {
   }
 };
 
+/**
+ * What each kind of domain needs in DNS (spec/dns.md §2).
+ *
+ * The proxy flags are not preferences — they were measured against the live
+ * setup (`saastarter2.saastemly.com` resolves to GitHub's four Pages IPs with
+ * the CNAME intact; `api.saastarter2.saastemly.com` resolves to Cloudflare
+ * anycast). A proxied Pages CNAME interferes with GitHub's certificate
+ * issuance, so `site` is unproxied and the caller is never given the choice.
+ */
+const desiredRecords = (host: string, resource: Json): DesiredRecord[] => {
+  const challenge = String(resource["challenge"] ?? "");
+  const records: DesiredRecord[] = [];
+  if (challenge) {
+    records.push({
+      type: "TXT",
+      name: `${CHALLENGE_LABEL}.${host}`,
+      content: challenge,
+      proxied: false, // TXT cannot be proxied at all
+    });
+  }
+  const target = String(resource["target"] ?? "").trim().toLowerCase().replace(/\.$/, "");
+  if (resource["kind"] === "site" && target) {
+    records.push({
+      type: "CNAME",
+      name: host,
+      content: target,
+      // MEASURED, not chosen: a proxied record breaks GitHub's certificate
+      // issuance for the custom domain. The caller never gets a say.
+      proxied: false,
+    });
+  }
+  // `kind: api` gets the challenge only. Its routing is Cloudflare for SaaS
+  // on the PLATFORM's zone with the PLATFORM's token — a customer credential
+  // has no authority over it, so writing a CNAME here would produce a host
+  // that resolves and then fails at TLS. Better to write nothing than to
+  // write something that looks finished and is not.
+  return records;
+};
+
 export const domain = defineResource({
   ...composable(domainCms),
   parent: project,
@@ -402,6 +531,7 @@ export const domain = defineResource({
       if (!rows[0] || rows[0].created_by !== principal.userId) {
         throw forbidden(`${parent} is not owned by the caller.`);
       }
+      assertNotPlatformHost(String(id ?? ""));
       await assertHostUnclaimed(String(id ?? ""), parent);
       return {
         ...data,
@@ -435,6 +565,7 @@ export const domain = defineResource({
         if (!rows[0] || rows[0].created_by !== principal.userId) {
           throw forbidden(`${parent} is not owned by the caller.`);
         }
+        assertNotPlatformHost(String(id ?? ""));
         await assertHostUnclaimed(String(id ?? ""), parent);
       }
       // Re-applying MUST NOT let a caller hand itself a challenge, a
@@ -449,6 +580,93 @@ export const domain = defineResource({
     },
   },
   customMethods: [
+    {
+      verb: "provision",
+      description:
+        "Write this domain's DNS records using the project's connected DNS credential (secret CLOUDFLARE_API_TOKEN), instead of publishing them by hand. Additive only: existing records are never modified or deleted, and anything in the way is reported. Pass {\"dry_run\": true} to see the plan without writing. Follow with `:verify`.",
+      request: z.object({
+        dry_run: z.boolean().optional().meta({
+          description: "Compute and return the plan without writing anything.",
+        }),
+      }),
+      response: z.object({
+        applied: z.boolean(),
+        zone: z.string().optional(),
+        created: z.number(),
+        plan: z.array(z.object({
+          action: z.string(),
+          type: z.string(),
+          name: z.string(),
+          content: z.string(),
+          proxied: z.boolean(),
+          detail: z.string().optional(),
+        })),
+      }),
+      handler: async ({ resource, id, parent, body }) => {
+        const projectId = parent.split("/")[1]!;
+        // BYOK: the project's OWN secret, never the operator's env — a miss
+        // must mean "no account connected", not "use the platform's".
+        const token = (await projectSecrets(projectId))["CLOUDFLARE_API_TOKEN"];
+        if (!token) {
+          throw new AepProblem({
+            type: "FAILED_PRECONDITION",
+            status: 409,
+            title: "No DNS credential is connected.",
+            detail:
+              "Set the project secret CLOUDFLARE_API_TOKEN to a Cloudflare API token scoped to this zone (Zone → DNS → Edit, plus Zone → Zone → Read), then retry.",
+          });
+        }
+        const provider = cloudflareDns(token, dnsFetch());
+        const zones = await provider.zones();
+        const zone = zoneForHost(id, zones);
+        if (!zone) {
+          throw new AepProblem({
+            type: "FAILED_PRECONDITION",
+            status: 409,
+            title: "The connected credential does not cover this domain.",
+            detail: `No zone in the connected account is a parent of ${id}. Check the token's Zone Resources, or add the zone to Cloudflare first.`,
+          });
+        }
+        // A `site` host with no target would provision the challenge alone and
+        // report success, leaving the domain verifiable but pointing nowhere —
+        // a half-done job the caller is told is finished.
+        if (resource["kind"] === "site" && !String(resource["target"] ?? "").trim()) {
+          throw new AepProblem({
+            type: "FAILED_PRECONDITION",
+            status: 409,
+            title: "This site domain has no target.",
+            detail:
+              "Set `target` on the domain to where it should point (for GitHub Pages, `yourname.github.io`), then retry — otherwise only the ownership challenge would be written.",
+          });
+        }
+        const desired = desiredRecords(id, resource);
+        const collisions = cnameCollisions(desired);
+        if (collisions.length) {
+          // Unreachable with today's record sets; asserted anyway because
+          // the failure mode is a whole plan that can never apply.
+          throw new AepProblem({
+            type: "INTERNAL", status: 500,
+            title: "The computed DNS plan is invalid.",
+            detail: `A CNAME cannot share a name with another record: ${collisions.join(", ")}.`,
+          });
+        }
+        const marker = markerFor(projectId, id);
+        const plan = await planRecords(provider, zone.id, desired, marker);
+        const wire = plan.map((entry) => ({
+          action: entry.action,
+          type: entry.record.type,
+          name: entry.record.name,
+          content: entry.record.content,
+          proxied: entry.record.proxied,
+          ...(entry.detail ? { detail: entry.detail } : {}),
+        }));
+        if (body["dry_run"] === true) {
+          return { applied: false, zone: zone.name, created: 0, plan: wire };
+        }
+        const created = await applyPlan(provider, zone.id, plan, marker);
+        return { applied: true, zone: zone.name, created, plan: wire };
+      },
+    },
     {
       verb: "verify",
       description:

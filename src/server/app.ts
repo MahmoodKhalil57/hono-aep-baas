@@ -15,6 +15,8 @@ import { block, collection, domain, form, kind, page, project, submission, theme
 import { COMPILED_CHILD_PLURALS, jitProjectApp } from "./jit-collections";
 import { studioHtml } from "./studio-page";
 import { projectPool } from "./pools";
+import { isReservedPlatformHost, platformFallbackProject } from "./platform-host";
+import { exchangeCode, redirectUri } from "./connect";
 import { authn, billing, connectionsConsumer, eventSink, flags, gateway, jobs, notifications, principalFrom, search } from "./services";
 
 /**
@@ -35,7 +37,7 @@ const aep = aepApp({
     theme,
     page,
     block,
-    ...(jobs ? [jobs.resource({ policy: "authenticated" })] : []),
+    ...(jobs ? [jobs.resource({ policy: { owner: { field: "created_by" } } })] : []),
     ...(notifications ? [notifications.feedResource()] : []),
   ],
   storage: drizzleAepStorage({ db, tables, resources: [project, form, submission, collection, domain, kind, theme, page, block] }),
@@ -99,6 +101,18 @@ const stripInternal = (request: Request): Request => {
  */
 const domainSurface = async (host: string): Promise<{ project: string } | "unverified" | null> => {
   if (!host) return null;
+  // The platform zone is resolved from the host itself and NEVER from a
+  // claim (domains.md §1a.3). Checking it first is what makes a hostile or
+  // stale row unable to shadow a derived host: a `domains` row for
+  // `{victim}-api.{zone}` would otherwise steal it when ACTIVE, and 404 it
+  // when merely PENDING — a denial of service that costs one call.
+  const suffix = process.env["PLATFORM_HOST_SUFFIX"] ?? "";
+  const derived = platformFallbackProject(host, suffix);
+  if (derived) return { project: derived };
+  if (isReservedPlatformHost(host, suffix)) return null;
+  // A CUSTOM domain always wins: a project that brought its own name must not
+  // be shadowed by the fallback, and the fallback must never override a host
+  // someone proved they own.
   const rows = (await db
     .select()
     .from(domains)
@@ -110,9 +124,43 @@ const domainSurface = async (host: string): Promise<{ project: string } | "unver
   // §3.1: a host that has been CLAIMED but not proven must not fall through
   // to the platform surface. Serving anything on an unverified name is how
   // a takeover is made to look legitimate.
-  return rows.length > 0 ? "unverified" : null;
+  if (rows.length > 0) return "unverified";
+  return null;
 };
 
+
+/**
+ * The consent callback. It exchanges the code and stops — the grant is parked
+ * until an owner claims it (connect.md §4). Renders a small page rather than
+ * redirecting, because the surface the flow started on may be a custom domain
+ * where no platform session exists, so bouncing the user there would land
+ * them signed out.
+ */
+const connectCallback = async (url: URL): Promise<Response> => {
+  const page = (title: string, detail: string, state?: string): Response =>
+    new Response(
+      `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+        `<title>${title}</title>` +
+        `<body style="font:16px/1.5 system-ui;margin:0;display:grid;place-items:center;min-height:100vh;background:#0b0b0c;color:#e8e8ea">` +
+        `<main style="max-width:34rem;padding:2rem"><h1 style="font-size:1.25rem;margin:0 0 .5rem">${title}</h1>` +
+        `<p style="margin:0 0 1rem;color:#a1a1aa">${detail}</p>` +
+        (state
+          ? `<p style="margin:0;color:#a1a1aa">Return to the studio and finish connecting. Reference: <code style="color:#e8e8ea">${state}</code></p>`
+          : "") +
+        `</main></body>`,
+      { status: state ? 200 : 400, headers: { "Content-Type": "text/html;charset=utf-8" } },
+    );
+
+  const error = url.searchParams.get("error");
+  if (error) return page("Connection declined", "No access was granted, and nothing was stored.");
+  const state = url.searchParams.get("state");
+  const code = url.searchParams.get("code");
+  if (!state || !code) return page("Something is missing", "This callback was incomplete. Start the connection again.");
+
+  const result = await exchangeCode(state, code);
+  if (!result.ok) return page("That did not work", result.reason);
+  return page("Almost done", "Your account was authorized. One more confirmation in the studio finishes it.", state);
+};
 
 const probes = createHealthProbes({
   version: "0.1.0",
@@ -1097,6 +1145,20 @@ export function createHandler(): (request: Request) => Promise<Response> {
     // along so generators re-emit the origin the caller used instead of the
     // platform path this rewrite produced.
     const host = request.headers.get("host") ?? url.host;
+    // The OAuth callback, BEFORE domain resolution (connect.md §3). On a
+    // resolved custom host every non-/v1/projects path is rewritten into that
+    // project's surface, which would swallow this route entirely. It is also
+    // refused anywhere but the platform origin: the redirect URI registered
+    // with the provider is a single fixed value, so a callback arriving on a
+    // tenant's host is a misconfiguration at best and code interception at
+    // worst.
+    if (url.pathname === "/connect/callback") {
+      const expected = new URL(redirectUri()).host;
+      if (host.toLowerCase().split(":")[0] !== expected.toLowerCase().split(":")[0]) {
+        return new Response("This callback is not served here.", { status: 404 });
+      }
+      return await connectCallback(url);
+    }
     if (!url.pathname.startsWith("/v1/projects/")) {
       const resolved = await domainSurface(host);
       if (resolved === "unverified") {

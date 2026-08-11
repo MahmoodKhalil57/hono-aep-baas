@@ -30,18 +30,99 @@ advertising **the alias the caller used**.
 | --- | --- | --- |
 | `api` | the surface origin (`api.saastarter3.example.com`) | `{BASE}` itself: openapi `servers[]`, `{BASE}/mcp`, studio + admin URLs, auth base + OAuth callbacks, hosted site assets, CORS |
 | `site` | the frontend origin (`saastarter3.example.com`) | `site.url` semantics: sitemap/robots/llms absolute links, OG card URLs, redirect targets, allowed origins |
-| `email` | the sending domain (`mail.saastarter3.example.com`) | `services.email.from` — the address a project's transactional mail is sent from (services.md §3a) |
+| `email` | the mail domain (`mail.saastarter3.example.com`) | `services.email.from` — the address a project's transactional mail is sent from — and, when inbound is asked for, the address it RECEIVES at (services.md §3a, §3a.1c) |
 
 `email` is the same resource with the same lifecycle; only the records
 differ. `api` and `site` prove control with the platform's TXT challenge;
-`email` publishes the **provider's** records (SPF/DKIM/DMARC, fetched from
-the sending provider) and is `ACTIVE` when the provider reports them
-verified. Ownership is proven the same way either path: you can only publish
-a record in a zone you control.
+`email` publishes the **provider's** records (SPF/DKIM/DMARC for sending, MX
+for receiving) and is `ACTIVE` when the provider reports them verified.
+Ownership is proven the same way either path: you can only publish a record
+in a zone you control.
+
+Sending and receiving are tracked independently on the one `email` domain —
+inbound additionally requires the domain to be a zone in a Cloudflare
+account, which sending does not, so a project can legitimately have one
+without the other (services.md §3a.1c).
 
 A project MAY declare either, both, or neither. Declaring none is the
 current behavior (platform path aliases only) and MUST keep working — the
 domain is an addition, never a precondition.
+
+## 1a. The free fallback: a hostname before you own one
+
+A domain costs money and takes a DNS round-trip to prove. Neither should
+stand between someone and a working API, so **every project gets a hostname
+on the platform's own zone, for free, the moment it exists**:
+
+```
+{project}-api.{platform-zone}      e.g. saastarter2-api.saastemly.com
+```
+
+This is **derived, never declared**. There is no `domains` row, no
+challenge, no `:verify` call, and nothing to revoke individually — ownership
+is not in question because the platform is the registrant. That single fact
+is what makes the fallback both free to hand out and centrally withdrawable.
+
+**Only `kind: api`.** A wildcard resolves to exactly ONE origin, and every
+project's frontend is a different deployment — so there is nothing coherent
+a wildcard could mean for `site`. Projects keep their host's free URL
+(`{user}.github.io/{repo}`) until they bring a domain, which costs nothing
+and is consistent with site.md: the baas hosts what the frontend READS,
+never the frontend. `email` has its own fallback — a shared sending alias on
+the platform's pool domain (services.md §3a), which is a different mechanism
+because mail reputation is pooled, not routed.
+
+**Precedence.** The derived host is resolved FIRST (§3), before the `domains`
+table is consulted — otherwise a hostile row could shadow it. That does not
+compete with custom domains, because the two namespaces cannot overlap: the
+fallback grammar matches only `{label}-api.{zone}`, and a custom host on the
+platform zone (`api.{project}.{zone}`) has a dot in its label, so it never
+does. Bringing a real domain is therefore an addition, never a migration: the
+fallback host keeps working, and both are aliases of one surface under §0.
+
+### 1a.1 Why not a free registrar (Freenom and friends)
+
+Rejected, with reasons, so this is not re-litigated:
+
+1. **It cannot be automated.** Freenom stopped new registrations in 2023
+   during Meta's lawsuit and exposes no supported provisioning API. A
+   fallback that requires a human is not a fallback.
+2. **Free TLDs are blocklisted wholesale.** `.tk`/`.ml`/`.ga`/`.cf`/`.gq`
+   carry enough abuse that mail providers reject them by TLD — so the tier
+   that most needs deliverability would have the least, defeating its own
+   purpose.
+3. **Browsers and corporate filters flag them**, which is the opposite of
+   the reassurance a first deploy needs.
+
+One owned zone costs ~$12/yr TOTAL and yields unlimited customer subdomains
+with none of the above. The economics are not close.
+
+### 1a.2 Substrate constraints that shape the grammar
+
+The odd-looking `{project}-api` — rather than the prettier
+`{project}.api.{zone}` — is forced by two measured platform facts:
+
+| constraint | consequence |
+| --- | --- |
+| **Workers Custom Domains do not support wildcard DNS records** (`workers/configuration/routing/custom-domains.mdx`); an incoming request must match the registered hostname exactly | The fallback CANNOT be a Custom Domain. It is a wildcard **route** (`*.{zone}/*`) plus a wildcard **DNS** record, and TLS therefore comes from the ZONE certificate rather than a per-hostname one |
+| A zone's free Universal SSL certificate covers the apex and `*.{zone}` — **one label deep**. Deeper wildcards need Advanced Certificate Manager (a paid zone add-on) | `saastarter2.api.saastemly.com` is two deep and would fail TLS on the free path. `saastarter2-api.saastemly.com` is one deep and is covered |
+
+Both grammars MUST resolve, so enabling ACM later is a DNS change and not a
+code change. Deployments that own no zone leave the suffix unset and the
+fallback is simply off.
+
+Also note DNS wildcards are **leftmost-label only** — `*.{zone}` is a legal
+record and `*-api.{zone}` is not. The record is therefore the broad
+`*.{zone}`, and the `-api` discrimination happens in the worker's route
+pattern and in resolution.
+
+### 1a.3 Reserved names
+
+The zone apex and the platform's own subdomains (`api`, `www`, `studio`,
+`admin`, `mail`, and any host with a real DNS record) MUST NOT resolve to a
+project. Exact records beat the wildcard at the DNS layer, and resolution
+refuses the apex and bare subdomains besides — handing a platform hostname
+to a tenant is a takeover with extra steps.
 
 ## 2. Domains are a resource, not a config field
 
@@ -94,12 +175,31 @@ periodically; a host whose TXT record disappears MUST fall back to
 
 On each request the server resolves, in order:
 
-1. `Host` matches an `ACTIVE` `api` domain → that project is the surface;
-   `BASE = https://{host}`, with an EMPTY path prefix. A path prefix on top
-   still nests: `https://api.bastarter.example.com/projects/saastarter3`
-   addresses bastarter's child, with
+1. `Host` matches the platform zone's fallback grammar (§1a) → that project
+   is the surface, `BASE = https://{host}` with an EMPTY path prefix. No
+   verification, because the platform owns the zone; an unknown label 404s
+   downstream like any other missing project.
+2. `Host` is otherwise ON the platform zone and reserved (§1a.3) → not a
+   surface; no `domains` row may serve it.
+3. `Host` matches an `ACTIVE` `api` domain → that project is the surface, same
+   BASE shape. A path prefix on top still nests:
+   `https://api.bastarter.example.com/projects/saastarter3` addresses
+   bastarter's child, with
    `BASE = https://api.bastarter.example.com/projects/saastarter3`.
-2. Otherwise the platform path form (surface.md §1), unchanged.
+4. `Host` is CLAIMED but not `ACTIVE` → 404 (requirement 1 below). It MUST
+   NOT fall through to the platform path form; serving an unverified name is
+   what a takeover looks like.
+5. Otherwise the platform path form (surface.md §1), unchanged.
+
+> **Why the derived host is resolved FIRST**, rather than after the table as
+> an earlier draft of this spec had it. A `domains` row must never be able to
+> shadow a derived host: an ACTIVE row on `{victim}-api.{zone}` would steal
+> that tenant's free surface, and a merely PENDING one would 404 it — a denial
+> of service costing one call. Deriving first makes both unreachable, and
+> costs nothing, because the two namespaces cannot overlap: the fallback
+> grammar matches only `{label}-api.{zone}`, while a custom host on the
+> platform zone (`api.{project}.{zone}`) has a dot in its label and so never
+> matches. Claims on the zone are refused at the door regardless (§1a.3).
 
 The ancestor chain (surface.md §1.1) is unaffected: a custom domain simply
 seeds the base with an origin instead of `/v1`. Both mechanisms feed the one
@@ -193,6 +293,26 @@ tool learns about domains. Migration MUST accept the current shape (a
 5. A parent MAY set a child's domain (it owns the child, per interface.md
    §3) — that is how a reseller provisions customer domains — but the
    ownership proof is still required for the host itself.
+6. **The fallback zone puts every tenant on ONE registrable domain**
+   (§1a), which is a shared cookie jar: any page on
+   `a-api.saastemly.com` can write a cookie scoped to `saastemly.com` and
+   `b-api.saastemly.com` will send it. Two consequences, both binding:
+   - Platform and project cookies MUST be **host-only** (no `Domain=`
+     attribute). A `Domain=saastemly.com` cookie is readable by every
+     tenant, and one on the console's own host is a session-fixation
+     vector against the platform itself.
+   - The platform zone SHOULD be submitted to the **Public Suffix List**,
+     which is what makes browsers refuse cross-tenant cookie writes rather
+     than relying on our discipline. This is why `vercel.app`,
+     `netlify.app` and `pages.dev` are on it, and it is the reason a
+     dedicated zone for the fallback is preferable to reusing a zone that
+     also carries the marketing site and the console.
+     PSL listing takes weeks and is not a launch blocker — the host-only
+     rule is what holds until it lands.
+7. **The fallback is not a proof of anything.** A project's fallback host is
+   derived from its id, so knowing an id is enough to name the host. That is
+   fine — the host selects a surface and never authorizes (§7.4) — but it
+   means project ids appear in URLs and should not be treated as secrets.
 
 ## 8. Conformance
 
@@ -205,6 +325,17 @@ tool learns about domains. Migration MUST accept the current shape (a
    `/v1/projects/{project}` interpolation anywhere.
 6. A nested child reached through its parent's custom domain advertises the
    parent-domain path, not the platform path.
+7. A new project is reachable at `{project}-api.{platform-zone}` with no
+   `domains` row, no DNS work, and no verification step.
+8. A verified custom domain for the same project takes precedence over its
+   fallback host, and BOTH keep serving — adding a domain never breaks the
+   host that was already in someone's config.
+9. The fallback matches on a LABEL boundary: `{project}-api.evil{zone}` does
+   not resolve.
+10. The zone apex, the platform's own subdomains, and site-shaped hosts
+    (`{project}.{zone}`) do not resolve to a project.
+11. With no platform zone configured, the fallback is off and every host
+    falls through to the platform path form.
 
 ## 9. Non-goals v1
 

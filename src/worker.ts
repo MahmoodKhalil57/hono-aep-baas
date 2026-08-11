@@ -46,7 +46,17 @@ async function boot(env: Env): Promise<{
   }
   const { createHandler } = await import("./server/app");
   const { jobs } = await import("./server/services");
-  return { handle: createHandler(), tick: () => (jobs ? jobs.tick() : Promise.resolve()) };
+  // The cron tick also sweeps abandoned connect flows: one that completed
+  // consent but was never claimed holds a live provider access token until it
+  // expires, and nothing else deletes it (connect.md §5.11).
+  const { sweepExpiredFlows } = await import("./server/connect");
+  return {
+    handle: createHandler(),
+    tick: async () => {
+      await sweepExpiredFlows();
+      return jobs ? await jobs.tick() : undefined;
+    },
+  };
 }
 
 export default {

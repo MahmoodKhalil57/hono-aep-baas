@@ -133,6 +133,42 @@ Tier 2 is isolated by construction — DMARC aligns to the `From:` domain, so
 a project on its own domain cannot affect anyone else's reputation. That is
 the argument for making tier 2 easy rather than charging for it.
 
+### 3a.1c Inbound — receiving is a different mechanism, not the reverse
+
+Sending and receiving share a domain and nothing else: different records
+(MX, not SPF/DKIM/DMARC), a different product, and a different failure mode.
+So `kind: email` carries BOTH record sets and reaches `ACTIVE` on whichever
+the project asked for.
+
+| what | records | free fallback |
+| --- | --- | --- |
+| send | SPF, DKIM, DMARC | shared pool domain, local-part identity (§3a.1) |
+| receive | MX + the provider's routing rules | `{project}@{pool-domain}` forwarded to the owner's verified address |
+
+Two constraints that decide the shape, and neither is optional:
+
+1. **Inbound needs the zone, not just the records.** The provider's Email
+   Routing requires the domain to be a zone in a Cloudflare account — a
+   customer who only publishes MX records at their existing DNS host cannot
+   use it. That is strictly stronger than the sending requirement (any DNS
+   host will do), so a project MAY be tier-2 for sending and fallback for
+   receiving. The two are tracked independently.
+2. **The 30-domains-per-zone limit is COMBINED** across Routing and Sending
+   (§3a.2), so inbound on the platform zone is subject to the same ceiling
+   and the same answer: a small fixed set of pool domains, identity in the
+   local-part.
+
+**Why receive at all.** Inbound routes to a Worker, which makes a received
+message an ordinary platform event — `support@` becomes a `submissions` row
+that the existing intake job already announces and autoresponds to
+(forms.md), with no new surface. Reply-threading on an order is the same
+mechanism. Absent that, a project's only inbound address is a personal
+mailbox nothing can act on.
+
+**Refuse, do not silently drop.** An address that resolves to no rule MUST
+be rejected at SMTP so the sender sees a bounce. Accepting-and-discarding is
+worse than not offering inbound, because the sender believes they were heard.
+
 ### 3a.2 Constraints on record (measured, not assumed)
 
 - **Beta, Workers Paid.** Email Sending is in beta at time of writing; the

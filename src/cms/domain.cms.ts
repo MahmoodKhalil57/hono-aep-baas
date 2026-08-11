@@ -24,6 +24,10 @@ export const domainCms = cmsResource({
       description:
         "`api` makes this host the surface origin — openapi servers[], {BASE}/mcp, studio/admin, auth callbacks. `site` is the frontend origin used for absolute links, OG cards and redirects.",
     }),
+    target: z.string().optional().meta({
+      description:
+        "Where a `site` host points — the CNAME target, e.g. `yourname.github.io` for GitHub Pages. Used by `:provision` to write the record for you. Leave empty for `api` hosts, whose routing is handled by the platform.",
+    }),
     challenge: z.string().optional().meta({
       description:
         "OUTPUT-ONLY. Publish as TXT at `_hono-aep-challenge.{host}`, then call `:verify`. Proof of control is what authorizes routing.",
@@ -43,9 +47,14 @@ export const domainCms = cmsResource({
   }),
   owner: "created_by",
   transitions: {
-    // The verb is `:verify` (below); this is the state edge it drives.
-    activate: { from: ["PENDING", "FAILED"], to: "ACTIVE", description: "Proof accepted — the host may route." },
-    suspend: { from: ["ACTIVE"], to: "PENDING", description: "Proof lapsed — routing stops." },
+    // INTERNAL, both of them: these are conclusions `:verify` draws from a
+    // DNS lookup, never assertions a caller may make. Published as routes,
+    // `:activate` is a one-call takeover — it moves PENDING → ACTIVE with no
+    // proof at all, which is precisely the state the challenge exists to
+    // establish. The edges stay declared so the studio still renders the
+    // machine; only the doors are gone.
+    activate: { from: ["PENDING", "FAILED"], to: "ACTIVE", internal: true, description: "Proof accepted — the host may route." },
+    suspend: { from: ["ACTIVE"], to: "PENDING", internal: true, description: "Proof lapsed — routing stops." },
   },
   methods: {
     apply: { policy: "authenticated" },

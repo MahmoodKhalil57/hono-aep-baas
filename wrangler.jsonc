@@ -7,6 +7,17 @@
   // The dogfooded studio bundle (bun scripts/build-studio.ts) — /studio
   // resolves to studio.html; unmatched paths fall through to the worker.
   "assets": { "directory": "./dist/studio-assets" },
+  // The free fallback surface (spec/domains.md §1a): every project answers at
+  // `{project}-api.saastemly.com` with no DNS work of its own. Setting this
+  // var alone is inert — traffic only arrives once the zone carries BOTH:
+  //   1. a proxied wildcard DNS record  `*.saastemly.com`  (leftmost label
+  //      only — `*-api.saastemly.com` is not a legal record), and
+  //   2. a worker route  `*-api.saastemly.com/*`  →  mizan-gpp.
+  // The route is NOT declared here on purpose: adding it to this file makes
+  // the next deploy claim the pattern, which must not happen before the DNS
+  // record exists. Existing exact hostnames (api.saastarter2.saastemly.com)
+  // are Workers Custom Domains and keep winning — they match no wildcard.
+  "vars": { "PLATFORM_HOST_SUFFIX": "saastemly.com" },
   "triggers": { "crons": ["* * * * *"] },
   "ai": { "binding": "AI" },
   "r2_buckets": [

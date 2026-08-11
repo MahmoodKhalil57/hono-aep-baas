@@ -45,6 +45,11 @@ export async function projectPool(projectId: string): Promise<AuthPool | null> {
                   to: { email: to },
                   content: { subject, body },
                   channels: ["email"],
+                  // Lifecycle mail is addressed to the project's END USER,
+                  // who is not a principal on this surface. It belongs to
+                  // the project owner — the one who has to answer "did the
+                  // reset email actually go out?".
+                  ...(rows[0]?.created_by ? { owner: rows[0].created_by } : {}),
                 });
               }) satisfies PoolEmailSender,
             }
@@ -91,7 +96,9 @@ export async function projectPool(projectId: string): Promise<AuthPool | null> {
         },
         // The resolution ladder (spec/secrets.md §2): the project's own
         // secrets shadow the worker env — self-serve OAuth credentials.
-        env: await (await import("./secrets")).projectEnv(projectId),
+        // Tenant-authored EnvRef names — allowlisted, never the whole
+        // worker env (secrets.ts: tenantConfigEnv).
+        env: await (await import("./secrets")).tenantConfigEnv(projectId),
       })
     : null;
   cache.set(projectId, pool);

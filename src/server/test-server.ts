@@ -17,7 +17,10 @@ export type TestServer = {
  * test: pieces are generated from the API's own OpenAPI document, so they
  * should be proven against the API as it really runs.
  */
-export async function startTestServer(): Promise<TestServer> {
+export async function startTestServer(
+  /** Extra env for the child — e.g. pointing a provider client at a stub. */
+  extraEnv: Record<string, string> = {},
+): Promise<TestServer> {
   const directory = mkdtempSync(join(tmpdir(), "baas-test-"));
   const databasePath = join(directory, "test.sqlite");
   const source = "data/baas.sqlite";
@@ -32,7 +35,7 @@ export async function startTestServer(): Promise<TestServer> {
   }
 
   const child: ChildProcess = spawn("bun", ["src/server/index.ts"], {
-    env: { ...process.env, PORT: "0", DATABASE_PATH: databasePath },
+    env: { ...process.env, PORT: "0", DATABASE_PATH: databasePath, ...extraEnv },
     stdio: ["ignore", "pipe", "pipe"],
   });
 
