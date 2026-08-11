@@ -62,9 +62,13 @@ and the reason every item below should be *declared*, not clicked.
 - [ ] ◐ Guest → account upgrade preserves cart and orders (auth-pools onLinkAccount)
 
 ### D. Email actually delivers
-- [ ] ◐ `RESEND_API_KEY` set; `services.email.from` on a **verified sending
-      domain** (SPF/DKIM). Unverified senders land in spam, which silently
-      breaks password reset AND order receipts.
+- [ ] ◐ Email provider chosen (services.md §3a). The **alias tier** needs no
+      setup at all and is the default; `resend` (BYOK) needs
+      `RESEND_API_KEY` plus a domain verified with Resend.
+- [ ] ◐ If sending from your OWN domain: a `kind: email` domain `ACTIVE`
+      (domains.md §1) with the provider's SPF/DKIM/DMARC published.
+      Unverified senders land in spam, which silently breaks password reset
+      AND order receipts — and does so without erroring.
 - [ ] ◐ Order confirmation and receipt templates reviewed
 - [ ] ✗ Deliverability monitoring (bounces/complaints) — no report card yet
 

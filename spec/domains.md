@@ -30,6 +30,14 @@ advertising **the alias the caller used**.
 | --- | --- | --- |
 | `api` | the surface origin (`api.saastarter3.example.com`) | `{BASE}` itself: openapi `servers[]`, `{BASE}/mcp`, studio + admin URLs, auth base + OAuth callbacks, hosted site assets, CORS |
 | `site` | the frontend origin (`saastarter3.example.com`) | `site.url` semantics: sitemap/robots/llms absolute links, OG card URLs, redirect targets, allowed origins |
+| `email` | the sending domain (`mail.saastarter3.example.com`) | `services.email.from` — the address a project's transactional mail is sent from (services.md §3a) |
+
+`email` is the same resource with the same lifecycle; only the records
+differ. `api` and `site` prove control with the platform's TXT challenge;
+`email` publishes the **provider's** records (SPF/DKIM/DMARC, fetched from
+the sending provider) and is `ACTIVE` when the provider reports them
+verified. Ownership is proven the same way either path: you can only publish
+a record in a zone you control.
 
 A project MAY declare either, both, or neither. Declaring none is the
 current behavior (platform path aliases only) and MUST keep working — the
@@ -205,4 +213,7 @@ tool learns about domains. Migration MUST accept the current shape (a
 - Automatic registrar integration — the owner publishes the TXT record.
 - Per-domain themes or content variation: a domain is an alias for ONE
   surface, not a variant of it.
-- Email sending domains (that is the `resend` config in services.md).
+- ~~Email sending domains~~ — **reopened and folded in** as `kind: email`
+  above, because it is the same question (does this project control that
+  name?) with a different record set. Keeping it out would have meant a
+  second verification mechanism for one concept.

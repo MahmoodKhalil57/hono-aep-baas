@@ -33,7 +33,15 @@ holds the key, who pays the vendor, and what we charge.
 | --- | --- | --- | --- |
 | **BYOK** — Stripe, GitHub, Google OAuth | the customer | the customer, directly | nothing for usage |
 | **Metered pass-through** — AI (catalogued); Mapbox and other vendor APIs are `spec-first` until catalogued | us | us | vendor cost + the published markup (§3) |
-| **Native** — form submission, order, domain verify, search | us | — (our own substrate) | a published credit price |
+| **Native** — form submission, order, domain verify, search, **email sent from a platform alias** | us | — (our own substrate) | a published credit price |
+
+**Email moves class with the tier** (services.md §3a) and is the clearest
+example of why the taxonomy is per-capability-*instance*, not per-capability:
+`resend` is BYOK (the builder's account, their bill, we charge nothing);
+platform-alias sending is native (our substrate, a credit price); sending
+from a project's own verified domain through our provider is metered
+pass-through. Same capability, three classes, decided by who holds the
+credential and whose reputation is at stake.
 
 `e-sign` was priced here before it existed; it is not in the catalog
 (kinds.md §6) and `media` is storage-only (parity.md §1). An unpriced,
