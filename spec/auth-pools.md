@@ -111,9 +111,12 @@ No-capability-loss is therefore STRUCTURAL, not a maintained parity.
 
 Attribution is free: the namespaced `created_by` names the host, so
 `pool:{host}:%` enumerates a white-label's children (metering hooks
-into this via counters.md when built). A host wanting id namespacing
-(`b1-*`) or a one-call provision does that in ITS console/CLI — a
-consumer concern, never a platform route. The platform's only job is
+into this via counters.md when built). A host wanting id namespacing (`b1-*`) does that in ITS console/CLI — a
+consumer concern. **Superseded in part:** one-call provisioning IS a
+platform route as of kinds.md §7a — creating a child with `domain` and
+`tier` in one write is the platform's core operation, and splitting it
+across two calls left the in-between state (provisioned, domain
+unverified) invisible. The namespacing half of this paragraph stands. The platform's only job is
 that pool principals are globally unique (they are: `pool:{project}:…`)
 so a white-label customer can never collide with, or impersonate, a
 platform account or another host's customer.

@@ -1,7 +1,7 @@
 # services.md — per-project service selection
 
 Status: v1 (2026-08-10). Depends: secrets.md, commerce.md, gateway.md,
-delivery.md, notifications (suite kind), sync.md §6.
+delivery.md, notifications (suite kind), sync.md (the `$schema` convention).
 
 ## 0. The gap this closes
 
@@ -18,11 +18,13 @@ config, no new infra.
 `project.cms.json` → `site.services` (the consumer's one config doc):
 
 ```json
-"site": {
-  "services": {
-    "payment":  { "provider": "stripe" },
-    "delivery": { "provider": "download" },
-    "email":    { "provider": "resend", "from": "Shop <shop@you.com>" }
+{
+  "site": {
+    "services": {
+      "payment":  { "provider": "stripe" },
+      "delivery": { "provider": "download" },
+      "email":    { "provider": "resend", "from": "Shop <shop@you.com>" }
+    }
   }
 }
 ```

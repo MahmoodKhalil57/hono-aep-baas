@@ -66,6 +66,11 @@ hono-aep-baas-idempotent-seed/
 
 `seed.json`:
 
+
+> **Coordinates.** `base` (the complete surface URL) is canonical as of
+> domains.md §6; `endpoint` + `project` is the legacy composition, still
+> accepted so existing checkouts keep working.
+
 ```json
 {
   "endpoint": "https://api.baas.example",

@@ -1,7 +1,7 @@
 # surface.md — one contract, four consumers, recursively
 
 Status: v1 (2026-08-10). Depends: collections.md, interface.md, auth-pools.md
-§3a (nested addressing), aep/mcp (the bridge), sync.md §6 (hosted schemas).
+§3a (nested addressing), aep/mcp (the bridge), sync.md (the `$schema` convention).
 
 ## 0. The claim
 
@@ -15,7 +15,7 @@ so a CMS can build a CMS, is kinds.md; this document assumes the fixed set.
 
 | | definition plane | data plane |
 | --- | --- | --- |
-| **what** | collections, themes, pages, forms, site, services, secrets, keys | the project's JIT collections' rows |
+| **what** | collections, **domains**, **kinds**, themes, pages, forms, site, services, secrets, keys | the project's JIT collections' rows |
 | **who edits it** | the studio | the admin |
 | **who reads it** | agents, tooling | the frontend, agents |
 
@@ -104,7 +104,7 @@ state (a collection applied a second ago appears without a deploy):
 | group | operations |
 | --- | --- |
 | data plane | every JIT collection: list/get/create/update/delete + declared custom verbs |
-| definition plane | collections, themes, pages, forms (the meta-resources) |
+| definition plane | collections, domains, kinds, themes, pages, forms, blocks (the meta-resources) |
 | project doc | site, services, secrets, keys |
 | auth | the project's pool endpoints, when `auth_pool` is declared |
 | interfaces + assets | `studio`, `admin`, `site/*` |

@@ -63,6 +63,34 @@ world-readable PII (contact submissions, the mailing list) and
 world-writable blogs because open access is its DEFAULT; ours is
 fail-closed — the port gets safe access rules by construction.
 
+### 3a. Fail-closed on ROWS, fail-OPEN on FIELDS (the PII gap)
+
+The hardening above is true of the **row** axis and false of the **field**
+axis, and the distinction is load-bearing enough to state plainly:
+
+> Policies bind at the METHOD surface (`auth/authz.schema.json`). Field-level
+> read policies are **PLANNED, not implemented**. So a collection with
+> `policy_get: "public"` exposes **every field of the row it returns.**
+
+A `customers` collection readable only by its owner leaks nothing; a
+publicly-readable `reviews` collection carrying `author_email`, or a
+`submissions` collection with an internal `notes` field, publishes that data
+to anyone. Nothing today hides a field while keeping the row readable — the
+AEP-157 read-mask is a caller convenience, **never an access control**.
+
+Until field policies land, the only safe constructions are:
+
+1. Do NOT put a field in a collection whose row policy is broader than the
+   field deserves — **split the resource** (public `reviews`, owner-scoped
+   `review_contacts`) rather than relying on clients to omit it.
+2. Read any `policy_list`/`policy_get` of `public` as a declaration that
+   **every field is public**, and review the field list on that basis.
+
+Recorded as a spec-vs-implementation gap rather than a design choice:
+`authz.schema.json` already reserves the vocabulary ("a field policy hides
+the field from unauthorized reads rather than erroring"), so the fix is to
+implement the reserved branch, not to invent a mechanism.
+
 ## 4. Logic: bindings, not hosted code (the boundary, restated)
 
 ~30 of saastarter's endpoints are bespoke (money math, joins,

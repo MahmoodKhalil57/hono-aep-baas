@@ -2,7 +2,7 @@
 
 Status: v1 draft (2026-08-11). Depends: collections.md (the data plane),
 surface.md (BASE + the two planes), interface.md (studio == admin),
-auth-pools.md §3a (nested projects), keys.md, quotas.md.
+surface.md §1 (nested addressing; auth-pools.md §3a is the ownership half), keys.md, quotas.md.
 
 ## 0. The claim
 
@@ -215,8 +215,12 @@ kinds is the advanced move, never the price of entry.
 
 ## 6. The capability catalog
 
-`bind` targets are the suite's real behaviors, not invented ones. Each is
-already implemented and already backed by a Cloudflare product:
+`bind` targets are the suite's real behaviors, not invented ones. **Status
+varies and is stated per row** — a capability may be implemented in the
+suite yet not bound to its eventual Cloudflare product (parity.md §2.7
+records that we bind only D1, R2 and Workers AI today). `bind` is
+accepted for any catalogued capability; whether it is *fast* is the
+substrate's business, not the narrowing law's:
 
 | capability | behavior | backed by |
 | --- | --- | --- |
@@ -226,7 +230,7 @@ already implemented and already backed by a Cloudflare product:
 | `form` | public submit endpoint + minted `pk_` key | D1 |
 | `domain` | verified host → surface routing (domains.md) | Workers custom domains |
 | `media` | blob upload/serve | R2 |
-| `search` | indexed query + embeddings | Workers AI |
+| `search` | indexed query + embeddings | Workers AI; Vectorize unbound (and bills the whole index per query — parity.md §2.7) |
 | `jobs` | queued async work | cron + D1 today; Queues is the upgrade (parity.md §2.7) |
 | `notifications` | multi-channel delivery | provider + Queues |
 | `authn` / `auth_pool` | platform and end-user identity | D1 |

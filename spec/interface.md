@@ -18,15 +18,17 @@ declared the interface**:
 
 One engine, one source. The differences are all config + route.
 
-## 1. Routes (all on the executor's domain)
+## 1. Routes (base-relative)
 
-Because projects NEST (`/v1/projects/{parent}/projects/{child}/**`),
+Routes are written against the **BASE** (surface.md §1), which may be a
+flat path, a nested path, or a custom origin (domains.md). Because projects
+NEST (`/v1/projects/{parent}/projects/{child}/**`),
 interfaces nest with them — the nested-route rewrite gives it for free:
 
 | route | plane | is also |
 | ----- | ----- | ------- |
-| `/v1/projects/{p}/studio` | definitions of p | — |
-| `/v1/projects/{p}/admin`  | data of p | — |
+| `{BASE}/studio` | definitions of p | — |
+| `{BASE}/admin`  | data of p | — |
 | `/v1/projects/bastarter/projects/saastarter3/studio` | definitions of saastarter3 | **bastarter's admin over its child** |
 | `/v1/projects/bastarter/projects/saastarter3/admin`  | saastarter3's store data | — |
 

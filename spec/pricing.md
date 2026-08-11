@@ -32,8 +32,12 @@ holds the key, who pays the vendor, and what we charge.
 | class | key held by | vendor paid by | we charge |
 | --- | --- | --- | --- |
 | **BYOK** — Stripe, GitHub, Google OAuth | the customer | the customer, directly | nothing for usage |
-| **Metered pass-through** — AI, Mapbox | us | us | vendor cost + the published markup (§3) |
-| **Native** — form submission, order, e-sign, domain verify, search | us | — (our own substrate) | a published credit price |
+| **Metered pass-through** — AI (catalogued); Mapbox and other vendor APIs are `spec-first` until catalogued | us | us | vendor cost + the published markup (§3) |
+| **Native** — form submission, order, domain verify, search | us | — (our own substrate) | a published credit price |
+
+`e-sign` was priced here before it existed; it is not in the catalog
+(kinds.md §6) and `media` is storage-only (parity.md §1). An unpriced,
+uncatalogued capability cannot be billed — see §8.1.
 
 ### 1.1 Why Stripe MUST be BYOK — and it is not a preference
 
@@ -56,10 +60,15 @@ capability we host, not for a vendor account we cannot see.
 - **Top-up** buys credits at list price. **Packs** (a subscription) buy them
   cheaper per credit — that is the only discount mechanism, so pricing stays
   one axis.
+- A pack MAY be **free and recurring**: that is how quotas.md's free tier is
+  expressed — an entitlement that mints N credits per period rather than a
+  separate allowance mechanism. "Everything is billed" means every operation
+  has a *price*, not that every operation is *paid for* by the customer.
 - Balance is a **fold over an append-only usage ledger**, never a mutable
   counter. Credits are money: a balance that can drift is a refund dispute.
-  (This is parity.md §2.5's ledger, and adopting this model **pulls that
-  primitive forward** from last place in the sequencing.)
+  (This is parity.md §2.5, now reframed as **Balances** — append-only entries
+  parameterised by unit. Credits are Profile B, which parity.md §5 ships
+  first precisely because this document requires it.)
 - Every charge is traceable to the operation that caused it, and appears on
   a receipt the customer can audit.
 
@@ -82,6 +91,23 @@ Not per-service pricing, not a spread we decline to explain. The receipt
 shows vendor cost and fee separately, so a customer can verify the number
 against the vendor's own price list.
 
+### 3a. Rounding, and why "exact" needs a clause
+
+Vendor billing is not continuous, so an exact multiplier over a rounded
+input is still a misprice. The published fee MUST state its rounding:
+
+- **R2 rounds usage UP** to the next million operations / next GB-month —
+  1,000,001 Class A operations bill as 2 million.
+- **Queues** bill per 64 KB chunk, so a 127 KB message costs double.
+- **Vectorize** bills `(stored + queried) × dimensions` — every query pays
+  for the whole index.
+- **Durable Objects** bill duration at a flat 128 MB while resident, not
+  only while executing, and WebSocket messages at 20:1.
+
+So a minimum billable unit is published per capability alongside the
+markup. Without this, small tenants are systematically under-billed and
+the "exact consistent markup" promise quietly breaks.
+
 This is a trust property, and it is also a constraint on us: we cannot hide
 margin in an expensive capability, so we are pushed toward capabilities that
 are genuinely cheap to run — which is the same pressure that produced
@@ -95,8 +121,10 @@ append** per event.
 
 1. Every capability invocation already crosses a known seam (kinds.md §8);
    that seam is the meter.
-2. Usage is written on the **cheap path** — Analytics Engine (parity.md
-   §2.7), not a row per event in D1.
+2. Usage is written on the **cheap path** — Analytics Engine or Pipelines
+   (parity.md §2.7), not a row per event in D1. Note that **D1 already
+   returns `meta.rows_read` / `meta.rows_written` on every query**, so the
+   per-tenant meter for storage-backed capabilities needs no new infra.
 3. The credits ledger is settled **periodically** from aggregated usage, not
    per operation.
 4. Metering failure MUST fail open for the customer and be reconciled later.
@@ -139,6 +167,29 @@ replaces. Entitlements do not disappear; they are re-aimed:
 - **Packs** grant N credits per period (an entitlement that mints credits).
 - Feature-flag-style grants remain useful for capability *access*, while
   credits govern capability *consumption*.
+
+## 7a. x402 — the agent-facing settlement layer (PLANNED)
+
+Cloudflare's **x402** is an HTTP-402 primitive for charging **per MCP tool
+call**, which is this document's per-operation model at the agent boundary.
+
+It is recorded, not adopted: the credits ledger (§2) must exist regardless —
+it governs native and pass-through capabilities, human and agent traffic
+alike — and two settlement paths before one ledger works would be a
+reconciliation problem, not a feature. Once Profile B lands, x402 is the
+likely way an agent settles without holding an account with us.
+
+Noted here so the metering seam is designed for it rather than retrofitted,
+the same treatment `kinds.md` §8 gives the capability meter.
+
+### 7b. Price the paywall, not the plumbing
+
+The Odoo audit (parity.md §0a) is direct pricing evidence: the incumbent
+gives away data models and invariant engines and charges for **aggregation,
+automation, approval, time, and document artifacts**. Those are exactly where
+our credit prices should be non-trivial — and conversely, pricing a form
+submission aggressively while giving away an aggregation query would invert
+the one pricing signal the market has already validated.
 
 ## 8. Conformance
 

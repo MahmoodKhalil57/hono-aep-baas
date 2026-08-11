@@ -1,7 +1,7 @@
 # secrets.md — per-project secrets (the self-serve keystone)
 
 Status: v1 (2026-08-09). Depends: keys.md (owner auth), auth-pools.md,
-commerce.md, sync.md §6 (schemas).
+commerce.md, sync.md (the `$schema` convention).
 
 ## 0. Why this exists
 

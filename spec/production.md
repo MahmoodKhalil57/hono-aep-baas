@@ -123,10 +123,15 @@ and the reason every item below should be *declared*, not clicked.
 ### K. Operations
 - [ ] ✅ Wide events per request; `X-Request-Id` on every response
 - [ ] ✅ Health probes (`/livez`, `/readyz`, `/healthz`)
-- [ ] ✗ **Backup/restore for a project's data.** migrations.md covers schema
-      change discipline; nothing covers "the operator deleted the wrong
-      thing" or point-in-time recovery for a tenant.
-- [ ] ✗ Alerting — nothing pages anyone when payments or email start failing
+- [x] ✅ **Point-in-time recovery exists and nobody knew.** D1 **Time Travel**
+      is always-on, free, and restores any minute in the last 30 days, per
+      database; DO SQLite has its own 30-day PITR. This was listed as a
+      blocker; it is a default.
+- [ ] ◐ **>30-day retention** — export D1 → R2 on a schedule (parity.md §2.7).
+- [ ] ✗ **A restore has never been rehearsed.** The mechanism is free; the
+      confidence is not. This is the gap, not the backup itself.
+- [ ] ◐ Alerting — Cloudflare **`alerting`** (policies + destinations) is a
+      binding, not a missing capability; nothing is wired to it yet
 - [ ] ◐ Quotas/rate limits (quotas.md is spec-first; Rate Limiting unbound)
 
 ### L. Recovery rehearsed
@@ -144,8 +149,9 @@ Ordered by what breaks first:
    diminished experience; this one takes money without delivering.
 2. **A `keys:revoke` route** (§A). A leaked key is unrecoverable self-serve.
 3. **Legal pages in the template** (§J). Cheap to add, and Stripe will ask.
-4. **Per-tenant backup/restore** (§K, §L). Customer rows are the only thing
-   git does not already hold.
+4. **A rehearsed restore** (§K, §L). Time Travel already covers the mechanism;
+   what is missing is evidence that a restore works and that someone has done
+   one. Customer rows are the only thing git does not already hold.
 
 ## 4. What Odoo has that we deliberately will not
 

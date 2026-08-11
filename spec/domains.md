@@ -1,8 +1,7 @@
 # domains.md — a surface is reachable at its owner's domain
 
 Status: v1 draft (2026-08-10). Depends: surface.md (the recursion law and
-BASE), interface.md (studio/admin routes), auth-pools.md §3a (nested
-projects), site.md (`site.url`, hosted assets), secrets.md.
+BASE), interface.md (studio/admin routes), surface.md §1 (nested addressing), site.md (`site.url`, hosted assets), secrets.md.
 
 ## 0. The claim
 
@@ -144,7 +143,7 @@ authorizes either. TLS provisioning is an edge concern, but a domain MUST NOT
 go `ACTIVE` before its certificate can serve, or the first request after
 verification breaks.
 
-## 6. Coordinates: `endpoint` becomes the BASE, `project` becomes identity
+## 6. Coordinates: `base` is the surface, `project` is identity
 
 Today `.owner-creds.json` carries `{endpoint, project}` and every tool builds
 `${endpoint}/v1/projects/${project}/…`. That forces a nested child to smuggle
@@ -155,12 +154,14 @@ and addressing are conflated.
 
 Normative change:
 
-- **`endpoint` is the surface BASE, complete.** Tools append resource paths
-  directly (`{endpoint}/collections`, `{endpoint}/mcp`), never
-  `/v1/projects/{project}`.
+- **`base` is the surface BASE, complete.** Tools append resource paths
+  directly (`{base}/collections`, `{base}/mcp`), never
+  `/v1/projects/{project}`. `endpoint` remains the platform origin, and
+  `endpoint` + `project` is the LEGACY composition kept for existing
+  checkouts (`hono-aep-baas-cli/src/creds.ts` `surfaceBase()`).
 - **`project` is the project's id only** — never a path.
 
-| repo | `endpoint` | `project` |
+| repo | `base` | `project` |
 | --- | --- | --- |
 | saastarter2 | `https://api.saastarter2.example.com` (or `https://{platform}/v1/projects/{id}`) | `{id}` |
 | bastarter | `https://api.bastarter.example.com` | `bastarter` |
