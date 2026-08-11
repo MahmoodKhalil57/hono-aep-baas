@@ -80,21 +80,58 @@ when it wants its own reputation and branding. `resend` stays available for
 anyone who would rather bring their own provider — a consumer *selects*, and
 never implements (§4).
 
-### 3a.1 The shared-alias risk, and why it is bounded
+### 3a.1 Reputation is the real design constraint
 
 One shared sending domain means **one abusive tenant degrades deliverability
-for every tenant on it** — the classic failure of shared sending. Three
-things bound it, and they must all hold before the alias tier is enabled:
+for every tenant on it**. Password resets stop arriving for customers who did
+nothing wrong, silently — no error, just mail in spam. So the sending
+identity is designed around reputation first.
 
-1. **Quotas are the gate, not an afterthought** (quotas.md). Alias-tier
-   sending is rate-limited per project and metered per message
-   (pricing.md), so volume abuse costs the abuser first.
-2. **Alias sending is a privilege, not a right.** A project that trips
-   complaint thresholds loses the alias tier and keeps its own-domain path —
-   its mail stops riding shared reputation, not its ability to send.
-3. **Own-domain sending is isolated by construction.** A project sending
-   from its own verified domain cannot affect anyone else's reputation,
-   which is the argument for making that path easy rather than premium.
+**Never send from the brand domain.** Platform-alias mail MUST leave from a
+domain registered solely for sending, never from the domain that serves the
+API, the marketing site, and the operator's own correspondence. A
+deliverability incident then cannot touch the brand, and — because the limit
+in §3a.2 is per zone — a dedicated sending zone also gets its own headroom.
+
+**Pools, not a domain.** The alias tier is a small set of sending domains,
+and a project is assigned to one by trust tier rather than round-robin.
+This is the IP-pool practice of every established ESP, applied to domains
+because the provider's IPs are shared. Registered domains cost roughly a
+currency unit a month; the deliverability of every tenant does not.
+
+> **Free domains are not an option, and the instinct to reach for them leads
+> somewhere worse.** Free TLDs are abused heavily enough to be blocklisted
+> wholesale, so mail from them starts below neutral rather than at it; free
+> subdomain providers hand over a shared apex whose history is unknown and
+> uncontrolled; and provider-owned hostnames (`*.workers.dev`, `*.pages.dev`)
+> cannot host SPF/DKIM/DMARC at all, because publishing records requires
+> controlling the zone. The goal is reputation ISOLATION, and a free domain
+> supplies the opposite: pre-existing bad reputation with no control over it.
+
+### 3a.1b Graduated sending — earn the right to email strangers
+
+The provider bills nothing for mail to **verified destination addresses** in
+the account, which makes a three-step ladder both free and abuse-resistant:
+
+| tier | may email | requires |
+| --- | --- | --- |
+| **0 — self** | only the project owner's verified address | nothing |
+| **1 — pool** | anyone, from a shared sending domain | a trust signal (payment, age, or an operator grant) plus quotas |
+| **2 — own** | anyone, from the project's own `kind: email` domain | DNS the project publishes (domains.md §1) |
+
+Tier 0 is the important one: a project created to send spam never reaches a
+stranger's inbox, because it cannot address one. That is a stronger and
+cheaper control than any content filter, and it costs a new legitimate
+builder nothing — password resets and order receipts to themselves work
+immediately while they are still building.
+
+Tier 1 is a **revocable privilege**. A project that trips complaint
+thresholds drops to tier 0 and keeps its tier-2 path: it loses the right to
+ride shared reputation, never the ability to send.
+
+Tier 2 is isolated by construction — DMARC aligns to the `From:` domain, so
+a project on its own domain cannot affect anyone else's reputation. That is
+the argument for making tier 2 easy rather than charging for it.
 
 ### 3a.2 Constraints on record (measured, not assumed)
 
